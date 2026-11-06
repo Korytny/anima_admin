@@ -1,4 +1,4 @@
-import type { Agent, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
+import type { Agent, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
 
 /**
  * Контракт слоя данных. UI работает только через него.
@@ -17,6 +17,11 @@ export interface Api {
   updateScene(id: string, patch: Partial<Scene>): Promise<Scene>
   updateScenes(ids: string[], patch: Partial<Scene>): Promise<Scene[]>
   deleteScenes(ids: string[]): Promise<void>
+
+  listCharacters(): Promise<Character[]>
+  createCharacter(topicId: string, data?: Partial<Character>): Promise<Character>
+  updateCharacter(id: string, patch: Partial<Character>): Promise<Character>
+  deleteCharacters(ids: string[]): Promise<void>
 
   listAgents(): Promise<Agent[]>
   createAgent(data?: Partial<Agent>): Promise<Agent>

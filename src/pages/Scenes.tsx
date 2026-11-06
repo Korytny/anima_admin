@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
-import { Clapperboard, Eye, Film, Plus, Search, Theater, Trash2, X } from 'lucide-react'
+import { Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
 import type { Scene } from '@/types'
-import { shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { scenePreview, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
@@ -24,8 +24,9 @@ import {
   Thumb,
 } from '@/components/ui'
 import { SceneCard } from './SceneCard'
+import { LAST_TOPIC_KEY as LAST_KEY, TopicSelect } from '@/components/TopicSelect'
+import { pipelineConfigured } from '@/api/pipeline'
 
-const LAST_KEY = 'scenes:lastTopic'
 
 export function ScenesPage() {
   const { topicId } = useParams()
@@ -34,30 +35,6 @@ export function ScenesPage() {
     return last ? <Navigate to={`/scenes/${last}`} replace /> : <NoTopic />
   }
   return <TopicScenes key={topicId} topicId={topicId} />
-}
-
-function TopicSelect({ value, className }: { value: string; className?: string }) {
-  const navigate = useNavigate()
-  const { topics } = useData()
-  const byTopic = useScenesByTopic()
-  // ролики со сценами — наверх
-  const options = useMemo(
-    () =>
-      [...topics]
-        .sort((a, b) => (byTopic.get(b.topic_id)?.length ?? 0) - (byTopic.get(a.topic_id)?.length ?? 0))
-        .map((t) => ({ value: t.topic_id, label: `${topicTitle(t)} · ${byTopic.get(t.topic_id)?.length ?? 0} сц.` })),
-    [topics, byTopic],
-  )
-  return (
-    <Select
-      className={className}
-      aria-label="Выбрать ролик"
-      value={value}
-      placeholder={value ? undefined : 'Выбрать ролик…'}
-      onChange={(e) => e.target.value && navigate(`/scenes/${e.target.value}`)}
-      options={options}
-    />
-  )
 }
 
 function NoTopic() {
@@ -69,7 +46,7 @@ function NoTopic() {
       description="Сцены показываются для одного ролика. Выберите его в контент-плане или в списке ниже."
       action={
         <div className="flex items-center gap-2">
-          <TopicSelect value="" className="w-72" />
+          <TopicSelect value="" base="/scenes" className="w-72" />
           <Button variant="primary" onClick={() => navigate('/topics')}>
             <Clapperboard /> В контент-план
           </Button>
@@ -82,7 +59,7 @@ function NoTopic() {
 function TopicScenes({ topicId }: { topicId: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { topics, loading, createScene, deleteScenes, updateScenes } = useData()
+  const { topics, scenes: allScenes, characters: allCharacters, loading, createScene, deleteScenes, updateScenes, generateSceneImages } = useData()
   const all = useScenesByTopic().get(topicId) ?? []
   const topic = topics.find((t) => t.topic_id === topicId)
   const [selection, setSelection] = useState<RowSelectionState>({})
@@ -146,7 +123,7 @@ function TopicScenes({ topicId }: { topicId: string }) {
         size: 76,
         enableSorting: false,
         meta: { label: 'Превью' },
-        cell: ({ row }) => <Thumb src={row.original.char_img_url?.[0] || row.original.base_image_url || undefined} className="h-7 w-12" />,
+        cell: ({ row }) => <Thumb src={scenePreview(row.original)} className="h-7 w-12" />,
       },
       {
         accessorKey: 'status',
@@ -276,7 +253,7 @@ function TopicScenes({ topicId }: { topicId: string }) {
                 <div className="text-[11px] text-fg-3">С видео</div>
                 <div className="font-semibold">{all.filter((s) => s.video_file).length}</div>
               </div>
-              <TopicSelect value={topicId} className="w-64" />
+              <TopicSelect value={topicId} base="/scenes" className="w-64" />
               <Button onClick={() => navigate(`/topics/${topicId}`)}>
                 <Clapperboard /> Карточка ролика
               </Button>
@@ -342,6 +319,20 @@ function TopicScenes({ topicId }: { topicId: string }) {
                     ))}
                   </DropdownContent>
                 </DropdownMenu>
+              )}
+              {selectedIds.length > 0 && (
+                <Button
+                  variant="outline"
+                  disabled={!pipelineConfigured}
+                  title={pipelineConfigured ? 'Запустить генерацию кадра в n8n' : 'Не задан VITE_N8N_IMAGE_WEBHOOK'}
+                  onClick={() => {
+                    const ids = new Set(selectedIds)
+                    void generateSceneImages(allScenes.filter((s) => ids.has(s.scene_id)), topics, allCharacters)
+                    setSelection({})
+                  }}
+                >
+                  <Sparkles /> Сгенерировать фото ({selectedIds.length})
+                </Button>
               )}
               <Button variant="danger" disabled={!selectedIds.length} onClick={() => setConfirm(selectedIds)}>
                 <Trash2 /> Удалить{selectedIds.length ? ` (${selectedIds.length})` : ''}

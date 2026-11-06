@@ -1,10 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/api'
-import type { Agent, Scene, Topic } from '@/types'
+import { requestSceneImage } from '@/api/pipeline'
+import type { Agent, Character, Scene, Topic } from '@/types'
 
 // Пайплайн (n8n и т.п.) пишет в БД сам — периодически подтягиваем изменения.
+// Пока что-то генерируется — чаще.
 const REFRESH_MS = 20_000
+const REFRESH_ACTIVE_MS = 4_000
+export const GENERATING = 'generating'
 
 interface DataState {
   loading: boolean
@@ -12,19 +16,20 @@ interface DataState {
   error: string | null
   topics: Topic[]
   scenes: Scene[]
+  characters: Character[]
   agents: Agent[]
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function useDataStore() {
-  const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], agents: [] })
+  const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], characters: [], agents: [] })
 
   const load = useCallback(async (silent = false) => {
     setState((s) => ({ ...s, refreshing: true }))
     try {
-      const [topics, scenes, agents] = await Promise.all([api.listTopics(), api.listScenes(), api.listAgents()])
-      setState({ loading: false, refreshing: false, error: null, topics, scenes, agents })
+      const [topics, scenes, characters, agents] = await Promise.all([api.listTopics(), api.listScenes(), api.listCharacters(), api.listAgents()])
+      setState({ loading: false, refreshing: false, error: null, topics, scenes, characters, agents })
     } catch (e) {
       if (!silent) toast.error('Не удалось загрузить данные', { description: errMsg(e) })
       setState((s) => ({ ...s, loading: false, refreshing: false, error: errMsg(e) }))
@@ -33,9 +38,13 @@ function useDataStore() {
 
   useEffect(() => {
     void load()
-    const t = setInterval(() => !document.hidden && load(true), REFRESH_MS)
-    return () => clearInterval(t)
   }, [load])
+
+  const active = state.scenes.some((s) => s.status === GENERATING)
+  useEffect(() => {
+    const t = setInterval(() => !document.hidden && load(true), active ? REFRESH_ACTIVE_MS : REFRESH_MS)
+    return () => clearInterval(t)
+  }, [load, active])
 
   const run = useCallback(async <T,>(p: Promise<T>, ok?: string): Promise<T | undefined> => {
     try {
@@ -103,6 +112,45 @@ function useDataStore() {
         if (ok) setState((s) => ({ ...s, scenes: s.scenes.filter((x) => !ids.includes(x.scene_id)) }))
       },
 
+      /** Ставит сцены в 'generating' и дергает вебхук n8n по каждой. Ошибка запуска → 'error'. */
+      async generateSceneImages(scenes: Scene[], topics: Topic[], characters: Character[]) {
+        if (!scenes.length) return
+        const ids = scenes.map((s) => s.scene_id)
+        const marked = await run(api.updateScenes(ids, { status: GENERATING }))
+        if (!marked) return
+        const map = new Map(marked.map((x) => [x.scene_id, x]))
+        setState((s) => ({ ...s, scenes: s.scenes.map((x) => map.get(x.scene_id) ?? x) }))
+
+        const results = await Promise.allSettled(scenes.map((sc) => requestSceneImage(sc, topics.find((t) => t.topic_id === sc.topic), sceneCharacters(sc, characters))))
+        const failed = ids.filter((_, i) => results[i].status === 'rejected')
+        if (failed.length) {
+          const reason = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason
+          toast.error(`Не удалось запустить генерацию: ${failed.length} из ${ids.length}`, { description: errMsg(reason) })
+          const res = await api.updateScenes(failed, { status: 'error' }).catch(() => null)
+          if (res) {
+            const m = new Map(res.map((x) => [x.scene_id, x]))
+            setState((s) => ({ ...s, scenes: s.scenes.map((x) => m.get(x.scene_id) ?? x) }))
+          }
+        }
+        if (failed.length < ids.length) toast.success(`Генерация запущена: ${ids.length - failed.length}`)
+      },
+
+      // ----- персонажи
+      async createCharacter(topicId: string) {
+        const c = await run(api.createCharacter(topicId), 'Персонаж добавлен')
+        if (c) setState((s) => ({ ...s, characters: [c, ...s.characters] }))
+        return c
+      },
+      async updateCharacter(id: string, patch: Partial<Character>) {
+        const c = await run(api.updateCharacter(id, patch), 'Сохранено')
+        if (c) setState((s) => ({ ...s, characters: s.characters.map((x) => (x.id === id ? c : x)) }))
+        return c
+      },
+      async deleteCharacters(ids: string[]) {
+        const ok = await run(api.deleteCharacters(ids).then(() => true), `Удалено персонажей: ${ids.length}`)
+        if (ok) setState((s) => ({ ...s, characters: s.characters.filter((x) => !ids.includes(x.id)) }))
+      },
+
       // ----- агенты (демо)
       async createAgent(data?: Partial<Agent>) {
         const a = await run(api.createAgent(data), 'Агент создан')
@@ -163,11 +211,29 @@ export function useScenesByTopic() {
   }, [scenes])
 }
 
+/** Превью сцены — сгенерированный кадр, иначе картинка персонажа. */
+export const scenePreview = (s: Scene) => s.base_image_url || s.char_img_url?.find(Boolean) || undefined
+
 /** Превью ролика — первая картинка первой сцены. */
 export function topicPreview(scenes: Scene[] | undefined) {
   for (const s of scenes ?? []) {
-    const img = s.char_img_url?.find(Boolean) || s.base_image_url
+    const img = scenePreview(s)
     if (img) return img
   }
   return undefined
 }
+
+// ----- персонажи
+
+const norm = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
+
+/** Персонажи сцены: того же ролика, имя есть в scene.character или = speaking_character. */
+export function sceneCharacters(scene: Scene, characters: Character[]) {
+  const names = new Set([...(scene.character ?? []), scene.speaking_character].map(norm).filter(Boolean))
+  return characters.filter((c) => c.topic === scene.topic && names.has(norm(c.name)))
+}
+
+/** Картинки персонажа (какое поле главное — пока не определено, берём все заполненные). */
+export const characterImages = (c: Character) => [c.base_img, c.pers_file, c.filename].filter((x): x is string => !!x)
+
+export const characterTitle = (c: Character) => c.name || `Персонаж ${shortId(c.id)}`

@@ -1,6 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import type { Scene, Topic } from '@/types'
+import type { Character, Scene, Topic } from '@/types'
 
 const PAGE = 1000
 
@@ -62,5 +62,20 @@ export const supabaseData = {
 
   async deleteScenes(ids: string[]) {
     check(await supabase.from('scenes').delete().in('scene_id', ids))
+  },
+
+  // characters: updated_at нет — порядок по created_at
+  listCharacters: () => selectAll<Character>('characters', 'created_at'),
+
+  async createCharacter(topicId: string, data: Partial<Character> = {}) {
+    return check(await supabase.from('characters').insert({ topic: topicId, name: 'Новый персонаж', ...data }).select().single()) as Character
+  },
+
+  async updateCharacter(id: string, patch: Partial<Character>) {
+    return check(await supabase.from('characters').update(patch).eq('id', id).select().single()) as Character
+  },
+
+  async deleteCharacters(ids: string[]) {
+    check(await supabase.from('characters').delete().in('id', ids))
   },
 }

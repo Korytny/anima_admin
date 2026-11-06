@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Captions, Maximize, Pause, Play, StepBack, StepForward, Volume2, VolumeX } from 'lucide-react'
 import { cn, fmtDuration } from '@/lib/utils'
+import { mediaUrl } from '@/lib/media'
 
 const SPEEDS = [0.5, 1, 1.5, 2]
 const FRAME = 1 / 25
@@ -52,8 +53,8 @@ export function VideoPlayer({ src, poster, subtitles, className }: { src: string
     >
       <video
         ref={video}
-        src={src}
-        poster={poster}
+        src={mediaUrl(src)}
+        poster={mediaUrl(poster)}
         className="aspect-video w-full cursor-pointer object-contain"
         onClick={toggle}
         onPlay={() => setPlaying(true)}
@@ -62,7 +63,7 @@ export function VideoPlayer({ src, poster, subtitles, className }: { src: string
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         preload="metadata"
       >
-        {subtitles && <track kind="subtitles" src={subtitles} default />}
+        {subtitles && <track kind="subtitles" src={mediaUrl(subtitles)} default />}
       </video>
 
       {!playing && (

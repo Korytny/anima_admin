@@ -10,6 +10,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react'
 import * as RDialog from '@radix-ui/react-dialog'
+import { mediaUrl } from '@/lib/media'
 import * as RDropdown from '@radix-ui/react-dropdown-menu'
 import * as RPopover from '@radix-ui/react-popover'
 import * as RSwitch from '@radix-ui/react-switch'
@@ -232,9 +233,10 @@ export function ProgressBar({ value, color = '#8B5CF6', className }: { value: nu
 }
 
 export function Thumb({ src, className, alt = '' }: { src?: string; className?: string; alt?: string }) {
-  const [err, setErr] = useState(false)
-  if (!src || err) return <div className={cn('skeleton rounded', className)} />
-  return <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} className={cn('rounded bg-raised object-cover', className)} />
+  const url = mediaUrl(src)
+  const [failed, setFailed] = useState<string>()
+  if (!url || failed === url) return <div className={cn('skeleton rounded', className)} />
+  return <img src={url} alt={alt} loading="lazy" onError={() => setFailed(url)} className={cn('rounded bg-raised object-cover', className)} />
 }
 
 export function Skeleton({ className }: { className?: string }) {

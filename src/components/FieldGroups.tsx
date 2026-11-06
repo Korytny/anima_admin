@@ -15,6 +15,8 @@ export interface FieldDef<T> {
   /** NOT NULL колонка: пустое значение сохраняется как '' а не null */
   required?: boolean
   render?: (value: unknown) => ReactNode
+  /** Доп. блок под полем (подсказки, кнопки). */
+  extra?: (value: unknown, onChange: (v: unknown) => void) => ReactNode
 }
 
 export interface GroupDef<T> {
@@ -97,6 +99,7 @@ function FieldRow<T>({ field, value, onChange, dirty }: { field: FieldDef<T>; va
       {label}
       <div className={cn('min-w-0', wide && 'col-span-2')}>
         <FieldInput id={id} field={field} value={value} onChange={onChange} />
+        {field.extra?.(value, onChange)}
       </div>
     </>
   )

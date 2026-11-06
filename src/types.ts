@@ -47,7 +47,8 @@ export interface Scene {
   event_img: string | null
   dialogue_text: string | null
   dialogue_direction: string | null
-  visual_prompt: string | null
+  visual_prompt: string | null // авто-промпт (не перезаписываем вручную)
+  manual_prompt: string | null // промпт, давший правильную картинку (правка человека)
   shot_type: string | null
   base_image_url: string | null
   inpaint_filename: string | null
@@ -65,6 +66,31 @@ export interface Scene {
   music_file: string | null
   video_file: string | null
   video_sub: string | null
+}
+
+/** public.characters — персонаж ролика. Связь со сценой — по имени (scenes.character[] / speaking_character). */
+export interface Character {
+  id: string // uuid, PK
+  created_at: string | null
+  topic: string | null // uuid → topics.topic_id
+  name: string | null
+  role_key: string | null
+  number: number | null
+  status: string | null
+  story: string | null
+  template: string | null
+  character_set_id: string | null
+  text_prompt: string | null
+  full_body_prompt: string | null
+  base_img: string | null
+  pers_file: string | null
+  filename: string | null
+  voice_name: string | null
+  voice_profile: Json | null
+  speed: number | null
+  style: number | null
+  similarityBoost: number | null
+  stability: number | null
 }
 
 // ---- Ниже — сущности без таблиц в БД (пока демо, in-memory)

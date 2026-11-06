@@ -44,7 +44,16 @@ begin
   end if;
 end $$;
 
--- 4. Добавить себя в админы (сначала создать пользователя в Authentication → Users):
+-- 4. Персонажи (characters.topic → ролик)
+alter table public.characters enable row level security;
+
+drop policy if exists "characters: admins all" on public.characters;
+create policy "characters: admins all" on public.characters
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+create index if not exists characters_topic_idx on public.characters (topic);
+
+-- 5. Добавить себя в админы (сначала создать пользователя в Authentication → Users):
 -- insert into public.admin_users (user_id)
 -- select id from auth.users where email = 'you@example.com'
 -- on conflict do nothing;

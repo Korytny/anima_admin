@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Copy, ExternalLink, ImageOff, Theater, Trash2 } from 'lucide-react'
 import type { Topic } from '@/types'
-import { topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { scenePreview, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { copyText, fmtBytes, fmtDateTime, fmtDuration, timeAgo } from '@/lib/utils'
+import { mediaUrl } from '@/lib/media'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
@@ -140,7 +141,7 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
                 </a>
               )}
               {topic.url_final && (
-                <a href={topic.url_final} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-fg-3 hover:text-accent-hover">
+                <a href={mediaUrl(topic.url_final)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-fg-3 hover:text-accent-hover">
                   <ExternalLink className="size-3" /> url_final
                 </a>
               )}
@@ -172,7 +173,7 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
                 <span className="w-10 shrink-0 text-center font-mono text-xs text-fg-3">
                   {s.scena ?? '—'}.{s.shot_num ?? '—'}
                 </span>
-                <Thumb src={s.char_img_url?.[0] || s.base_image_url || undefined} className="h-8 w-14 shrink-0" />
+                <Thumb src={scenePreview(s)} className="h-8 w-14 shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px]">{s.speaking_character || '—'}</span>
                   <span className="block truncate text-xs text-fg-3">{s.dialogue_text || s.action}</span>

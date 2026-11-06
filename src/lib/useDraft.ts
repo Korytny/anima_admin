@@ -49,7 +49,7 @@ export function useDraft<T extends object>(entity: T | null | undefined, idKey: 
   }
 
   const submit = async () => {
-    if (!draft || !dirty) return
+    if (!draft || !dirty) return true
     const patch: Partial<T> = {}
     for (const k of dirtyKeys) (patch as Record<string, unknown>)[k] = draft[k as keyof T]
     setSaving(true)
@@ -59,6 +59,7 @@ export function useDraft<T extends object>(entity: T | null | undefined, idKey: 
         touched.current.clear()
         setDraft(res)
       }
+      return !!res
     } finally {
       setSaving(false)
     }
