@@ -57,3 +57,7 @@ create index if not exists characters_topic_idx on public.characters (topic);
 -- insert into public.admin_users (user_id)
 -- select id from auth.users where email = 'you@example.com'
 -- on conflict do nothing;
+
+-- Подписи
+comment on table public.admin_users is 'Кто имеет доступ к админке (RLS через is_admin()). Источник: anima_admin/supabase/policies.sql';
+comment on function public.is_admin() is 'true, если auth.uid() есть в admin_users. Используется в RLS-политиках topics/scenes/characters. Источник: anima_admin/supabase/policies.sql';

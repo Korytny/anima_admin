@@ -1,7 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { requestSceneImage } from '@/api/pipeline'
+import { NEW_TOPIC_TITLE } from '@/api/supabase'
+import { uniqueFolder } from '@/lib/media'
 import type { Agent, Character, Scene, Topic } from '@/types'
 
 // Пайплайн (n8n и т.п.) пишет в БД сам — периодически подтягиваем изменения.
@@ -24,12 +26,49 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function useDataStore() {
   const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], characters: [], agents: [] })
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  // Папка ролика (topics.folder) назначается один раз — как только у ролика есть настоящее название.
+  // Дальше не меняется. Уникальность гарантирует индекс topics_folder_key; при гонке — следующий суффикс.
+  const assigning = useRef(false)
+  const assignFolders = useCallback(async (topics: Topic[]) => {
+    const todo = topics.filter((t) => !t.folder && t.title?.trim() && t.title !== NEW_TOPIC_TITLE)
+    if (!todo.length || assigning.current) return
+    assigning.current = true
+    const taken = new Set(topics.map((t) => t.folder).filter((f): f is string => !!f))
+    const done: Topic[] = []
+    try {
+      for (const t of todo) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const folder = uniqueFolder(t.title, taken)
+          taken.add(folder)
+          try {
+            done.push(await api.updateTopic(t.topic_id, { folder }))
+            break
+          } catch (e) {
+            if (!/duplicate key|topics_folder_key/.test(errMsg(e))) throw e
+          }
+        }
+      }
+    } catch (e) {
+      toast.error('Не удалось назначить папку ролику', { description: errMsg(e) })
+    } finally {
+      assigning.current = false
+    }
+    if (done.length) {
+      const map = new Map(done.map((t) => [t.topic_id, t]))
+      setState((s) => ({ ...s, topics: s.topics.map((x) => map.get(x.topic_id) ?? x) }))
+      toast.success(done.length === 1 ? `Папка ролика: ${done[0].folder}` : `Назначены папки: ${done.length} роликов`)
+    }
+  }, [])
 
   const load = useCallback(async (silent = false) => {
     setState((s) => ({ ...s, refreshing: true }))
     try {
       const [topics, scenes, characters, agents] = await Promise.all([api.listTopics(), api.listScenes(), api.listCharacters(), api.listAgents()])
       setState({ loading: false, refreshing: false, error: null, topics, scenes, characters, agents })
+      void assignFolders(topics)
     } catch (e) {
       if (!silent) toast.error('Не удалось загрузить данные', { description: errMsg(e) })
       setState((s) => ({ ...s, loading: false, refreshing: false, error: errMsg(e) }))
@@ -70,6 +109,7 @@ function useDataStore() {
       async updateTopic(id: string, patch: Partial<Topic>) {
         const t = await run(api.updateTopic(id, patch), 'Сохранено')
         if (t) setState((s) => ({ ...s, topics: s.topics.map((x) => (x.topic_id === id ? t : x)) }))
+        if (t) void assignFolders([t, ...stateRef.current.topics.filter((x) => x.topic_id !== id)])
         return t
       },
       async updateTopics(ids: string[], patch: Partial<Topic>) {
@@ -167,7 +207,7 @@ function useDataStore() {
         if (ok) setState((s) => ({ ...s, agents: s.agents.filter((a) => !ids.includes(a.id)) }))
       },
     }),
-    [run, load],
+    [run, load, assignFolders],
   )
 
   return { ...state, ...actions }

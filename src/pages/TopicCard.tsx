@@ -62,6 +62,7 @@ function groups(status: string | null): GroupDef<Topic>[] {
       defaultOpen: false,
       fields: [
         { key: 'topic_id', type: 'readonly' },
+        { key: 'folder', label: 'folder — папка на диске', mono: true },
         { key: 'updated_at', type: 'readonly', render: (v) => fmtDateTime(v as string) },
       ],
     },

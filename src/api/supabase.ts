@@ -21,11 +21,13 @@ async function selectAll<T>(table: string, orderBy: string): Promise<T[]> {
 
 const now = () => new Date().toISOString()
 
+export const NEW_TOPIC_TITLE = 'Новый ролик'
+
 export const supabaseData = {
   listTopics: () => selectAll<Topic>('topics', 'updated_at'),
 
   async createTopic(data: Partial<Topic> = {}) {
-    return check(await supabase.from('topics').insert({ title: 'Новый ролик', status: 'draft', ...data }).select().single()) as Topic
+    return check(await supabase.from('topics').insert({ title: NEW_TOPIC_TITLE, status: 'draft', ...data }).select().single()) as Topic
   },
 
   async updateTopic(id: string, patch: Partial<Topic>) {

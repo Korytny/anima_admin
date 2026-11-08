@@ -23,6 +23,7 @@ export interface Topic {
   music: string | null
   chars: string[] | null
   script_scenas: string | null
+  folder: string | null // папка на диске (anima/<folder>/…), назначает админка один раз (store: assignFolders)
 }
 
 /** public.scenes — сцена (шот) ролика */

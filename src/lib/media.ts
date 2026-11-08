@@ -1,9 +1,10 @@
 // Медиа лежат на диске сервера в ComfyUI/output. В БД — путь ОТНОСИТЕЛЬНО output:
-//   anima/<topic_id>/characters/<имя>.png
-//   anima/<topic_id>/scenes/<scena>-<shot_num>.png
+//   anima/<topics.folder>/characters/<имя>.png
+//   anima/<topics.folder>/scenes/<scena>-<shot_num>.png
+// topics.folder — транслит названия (+ -2, -3 при совпадении), назначает админка один раз (uniqueFolder).
 // Полный путь (/…/ComfyUI/output/anima/…) тоже понимаем — отрезаем корень.
 // Полные URL (http…) отдаются как есть.
-import type { Character, Scene } from '@/types'
+import type { Character, Scene, Topic } from '@/types'
 
 const BASE = (import.meta.env.VITE_MEDIA_BASE_URL || '/media').replace(/\/$/, '')
 /** Абсолютный путь к ComfyUI/output на сервере — для копирования путей в ComfyUI и разбора полных путей. */
@@ -34,23 +35,42 @@ export function absPath(path: string): string {
 
 // ----- соглашение об именах
 
-export const slug = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '_')
-    .replace(/^_+|_+$/g, '') || 'noname'
+const TR: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p',
+  р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+}
 
-const topicDir = (topicId: string | null) => `anima/${topicId ?? 'no-topic'}`
+/** «Адхиратха» → «adkhiratkha». Только [a-z0-9-], до 40 символов. */
+export const slug = (s: string) =>
+  [...s.toLowerCase()]
+    .map((ch) => TR[ch] ?? ch)
+    .join('')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '') || 'noname'
+
+/** Свободное имя папки для ролика: slug названия, при совпадении -2, -3… */
+export function uniqueFolder(title: string | null | undefined, taken: Set<string>) {
+  const base = slug(title ?? '') === 'noname' ? 'topic' : slug(title ?? '')
+  let name = base
+  for (let n = 2; taken.has(name); n++) name = `${base}-${n}`
+  return name
+}
+
+type TopicRef = Pick<Topic, 'topic_id' | 'folder'> | undefined
+
+/** Папка ролика; пока folder не назначен — по topic_id. */
+const topicDir = (topic: TopicRef, topicId: string | null) => `anima/${topic?.folder || topicId || 'no-topic'}`
 
 /** «03-1» — код кадра: сцена (2 знака, для сортировки в папке) и шот. */
 export const sceneCode = (s: Pick<Scene, 'scena' | 'shot_num'>) => `${String(s.scena ?? 0).padStart(2, '0')}-${s.shot_num ?? 1}`
 
 /** Ожидаемый путь кадра сцены. */
-export const scenePath = (s: Scene) => `${topicDir(s.topic)}/scenes/${sceneCode(s)}.png`
+export const scenePath = (s: Scene, topic: TopicRef) => `${topicDir(topic, s.topic)}/scenes/${sceneCode(s)}.png`
 
 /** Ожидаемый путь картинки персонажа. */
-export const characterPath = (c: Character) => `${topicDir(c.topic)}/characters/${slug(c.name ?? c.id)}.png`
+export const characterPath = (c: Character, topic: TopicRef) => `${topicDir(topic, c.topic)}/characters/${slug(c.name ?? c.id)}.png`
 
 /** filename_prefix для SaveImage в ComfyUI (ComfyUI сам допишет _00001_.png). */
-export const outputPrefix = (s: Scene) => `${topicDir(s.topic)}/scenes/${sceneCode(s)}`
+export const outputPrefix = (s: Scene, topic: TopicRef) => `${topicDir(topic, s.topic)}/scenes/${sceneCode(s)}`

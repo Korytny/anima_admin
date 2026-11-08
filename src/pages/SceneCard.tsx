@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
-import type { Character, Scene } from '@/types'
+import type { Character, Scene, Topic } from '@/types'
 import { useNavigate } from 'react-router-dom'
 import { GENERATING, characterImages, characterTitle, sceneCharacters, useData } from '@/store/data'
 import { pipelineConfigured } from '@/api/pipeline'
@@ -15,7 +15,7 @@ import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { Button, ConfirmDialog, Kbd, StatusBadge, Tabs, Thumb } from '@/components/ui'
 
-function groups(scene: Scene): GroupDef<Scene>[] {
+function groups(scene: Scene, topic: Topic | undefined): GroupDef<Scene>[] {
   const status = scene.status
   return [
     {
@@ -30,7 +30,7 @@ function groups(scene: Scene): GroupDef<Scene>[] {
     {
       title: 'Кадр',
       fields: [
-        { key: 'base_image_url', type: 'url', mono: true, extra: (v, set) => <PathHint expected={scenePath(scene)} value={v} onChange={set} /> },
+        { key: 'base_image_url', type: 'url', mono: true, extra: (v, set) => <PathHint expected={scenePath(scene, topic)} value={v} onChange={set} /> },
         { key: 'manual_prompt', label: 'manual_prompt — сработавший', type: 'textarea', rows: 4, mono: true },
         { key: 'visual_prompt', label: 'visual_prompt — авто', type: 'textarea', rows: 4, mono: true },
         { key: 'shot_type' },
@@ -153,7 +153,8 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const [media, setMedia] = useState<Media>(scene.video_file ? 'video' : 'image')
   const [img, setImg] = useState(0)
   const [applyAll, setApplyAll] = useState(false)
-  const fieldGroups = useMemo(() => (draft ? groups(draft) : []), [draft])
+  const topic = topics.find((t) => t.topic_id === scene.topic)
+  const fieldGroups = useMemo(() => (draft ? groups(draft, topic) : []), [draft, topic])
   if (!draft) return null
 
   const images = [...(scene.char_img_url ?? []), scene.base_image_url, scene.event_img].filter((x): x is string => !!x)
