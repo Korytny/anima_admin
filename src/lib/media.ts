@@ -2,22 +2,29 @@
 //   anima/<topics.folder>/characters/<имя>.png
 //   anima/<topics.folder>/scenes/<scena>-<shot_num>.png
 // topics.folder — транслит названия (+ -2, -3 при совпадении), назначает админка один раз (uniqueFolder).
-// Полный путь (/…/ComfyUI/output/anima/…) тоже понимаем — отрезаем корень.
+// Полный путь тоже понимаем — отрезаем корень: /…/ComfyUI/output/anima/…, c:/ComfyUI/…/output/…, C:\…\output\…
 // Полные URL (http…) отдаются как есть.
 import type { Character, Scene, Topic } from '@/types'
 
+const slashes = (p: string) => p.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+
 const BASE = (import.meta.env.VITE_MEDIA_BASE_URL || '/media').replace(/\/$/, '')
 /** Абсолютный путь к ComfyUI/output на сервере — для копирования путей в ComfyUI и разбора полных путей. */
-export const MEDIA_ROOT = ((import.meta.env.VITE_MEDIA_ROOT as string | undefined) ?? '').replace(/\/$/, '')
+export const MEDIA_ROOT = slashes((import.meta.env.VITE_MEDIA_ROOT as string | undefined) ?? '')
 
 const isUrl = (p: string) => /^(https?:|blob:|data:)/.test(p)
+/** Абсолютный путь: /…, c:/…, C:\… */
+const isAbs = (p: string) => /^(\/|[a-z]:\/)/i.test(p)
 
 /** Приводит путь к виду «относительно output». */
 export function toRelative(path: string): string {
-  let p = path.trim().replace(/\\/g, '/')
-  if (MEDIA_ROOT && p.startsWith(MEDIA_ROOT + '/')) return p.slice(MEDIA_ROOT.length + 1)
-  const i = p.lastIndexOf('/output/')
-  if (p.startsWith('/') && i >= 0) p = p.slice(i + '/output/'.length)
+  const p = slashes(path)
+  // Windows-пути регистронезависимы: C:/ComfyUI == c:/comfyui
+  if (MEDIA_ROOT && p.toLowerCase().startsWith(MEDIA_ROOT.toLowerCase() + '/')) return p.slice(MEDIA_ROOT.length + 1)
+  if (isAbs(p)) {
+    const i = p.toLowerCase().lastIndexOf('/output/')
+    if (i >= 0) return p.slice(i + '/output/'.length)
+  }
   return p.replace(/^\/+/, '')
 }
 

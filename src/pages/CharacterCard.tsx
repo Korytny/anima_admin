@@ -77,7 +77,7 @@ function Body({ character, onDelete }: { character: Character; onDelete: (id: st
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(character, 'id', (patch) => updateCharacter(character.id, patch))
   const [img, setImg] = useState(0)
   if (!draft) return null
-  const images = characterImages(character)
+  const images = characterImages(draft) // из черновика — превью сразу после ввода пути
 
   return (
     <>
