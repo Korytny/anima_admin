@@ -236,7 +236,10 @@ export function Thumb({ src, className, alt = '' }: { src?: string; className?: 
   const url = mediaUrl(src)
   const [failed, setFailed] = useState<string>()
   if (!url || failed === url) return <div className={cn('skeleton rounded', className)} />
-  return <img src={url} alt={alt} loading="lazy" onError={() => setFailed(url)} className={cn('rounded bg-raised object-cover', className)} />
+  return <img src={url} alt={alt} loading="lazy" onError={() => {
+        console.warn('[media] не загрузилось:', { 'в БД': src, запрос: new URL(url, location.href).href, MEDIA_ROOT: import.meta.env.VITE_MEDIA_ROOT || '(не задан)' })
+        setFailed(url)
+      }} className={cn('rounded bg-raised object-cover', className)} />
 }
 
 export function Skeleton({ className }: { className?: string }) {

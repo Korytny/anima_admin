@@ -2,7 +2,8 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
-import { createReadStream, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import type { ServerResponse } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
@@ -18,18 +19,27 @@ function mediaDir(dir: string | undefined): Plugin {
   return {
     name: 'media-dir',
     configureServer(server) {
-      if (!dir) return
+      if (!dir) {
+        server.config.logger.warn('[media] MEDIA_DIR не задан в .env.local — /media/* отдаваться не будет')
+        return
+      }
       const root = resolve(dir)
+      server.config.logger.info(`[media] /media/* → ${root} (папка ${existsSync(root) ? 'есть' : 'НЕ НАЙДЕНА'})`)
+      const miss = (res: ServerResponse, url: string, file: string, why: string) => {
+        server.config.logger.warn(`[media] 404 ${url} → ${file} (${why})`)
+        res.statusCode = 404
+        res.end(`not found: ${file}`)
+      }
       server.middlewares.use('/media', (req, res, next) => {
         const file = resolve(root, '.' + decodeURIComponent((req.url ?? '/').split('?')[0]))
-        if (!file.startsWith(root + sep)) return next()
+        if (!file.startsWith(root + sep)) return miss(res, req.url ?? '', file, 'вне MEDIA_DIR')
         let size: number
         try {
           const st = statSync(file)
-          if (!st.isFile()) return next()
+          if (!st.isFile()) return miss(res, req.url ?? '', file, 'не файл')
           size = st.size
         } catch {
-          return next()
+          return miss(res, req.url ?? '', file, 'файла нет')
         }
         res.setHeader('Content-Type', MIME[extname(file).toLowerCase()] ?? 'application/octet-stream')
         res.setHeader('Accept-Ranges', 'bytes')
