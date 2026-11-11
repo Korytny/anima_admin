@@ -15,6 +15,7 @@ import { VoicePage } from '@/pages/Voice'
 import { AnimationPage } from '@/pages/Animation'
 import { MontagePage } from '@/pages/Montage'
 import { MusicPage } from '@/pages/Music'
+import { ComputePage } from '@/pages/Compute'
 import { ScriptPage } from '@/pages/Script'
 import { AgentsPage } from '@/pages/Agents'
 import { SeasonsPage } from '@/pages/Seasons'
@@ -41,6 +42,7 @@ const router = createBrowserRouter([
       { path: 'montage/:topicId?', element: <MontagePage /> },
       { path: 'characters/:seasonId?', element: <CharactersPage /> },
       { path: 'agents', element: <AgentsPage /> },
+      { path: 'compute', element: <ComputePage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/topics" replace /> },
     ],

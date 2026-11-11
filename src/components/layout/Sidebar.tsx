@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Bot, Clapperboard, Film, LayoutDashboard, LayoutGrid, Library, LogOut, Mic, Music2, PanelLeftClose, PanelLeftOpen, Scissors, ScrollText, Settings, Theater, Users } from 'lucide-react'
+import { Bot, Clapperboard, Cpu, Film, LayoutDashboard, LayoutGrid, Library, LogOut, Mic, Music2, PanelLeftClose, PanelLeftOpen, Scissors, ScrollText, Settings, Theater, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { signOut, useSession } from '../AuthGate'
 import { Avatar } from '../ui'
@@ -17,6 +17,7 @@ export const NAV = [
   { to: '/montage', label: 'Монтаж', icon: Scissors, demo: false },
   { to: '/characters', label: 'Персонажи', icon: Users, demo: false },
   { to: '/agents', label: 'Агенты', icon: Bot, demo: false },
+  { to: '/compute', label: 'Вычисления', icon: Cpu, demo: false },
   { to: '/settings', label: 'Настройки', icon: Settings, demo: true },
 ] as const
 
