@@ -33,7 +33,7 @@ function groups(seasons: Season[]): GroupDef<Topic>[] {
       title: 'Контент',
       defaultOpen: false,
       fields: [
-        { key: 'season_id', label: 'сезон', type: 'select', options: [{ value: '', label: '— без сезона —' }, ...seasons.map((s) => ({ value: s.id, label: seasonTitle(s) }))] },
+        { key: 'season_id', label: 'сезон', type: 'select', required: true, options: seasons.map((s) => ({ value: s.id, label: seasonTitle(s) })) },
         { key: 'logline', label: 'логлайн', type: 'textarea', rows: 3 },
         { key: 'beats', label: 'биты', type: 'list', rows: 8 },
         { key: 'script_scenas', label: 'script_scenas — сценарий', type: 'textarea', rows: 8 },

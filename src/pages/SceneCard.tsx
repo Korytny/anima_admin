@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
-import type { Character, Scene, Topic } from '@/types'
+import type { Character, Scene, Season, Topic } from '@/types'
 import { useNavigate } from 'react-router-dom'
 import { GENERATING, characterImages, characterTitle, sceneCharacters, seasonCharacters, useData } from '@/store/data'
 import { pipelineConfigured } from '@/api/pipeline'
@@ -9,13 +9,14 @@ import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
 import { SCENE_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
+import { useCardLayout } from '@/lib/useCardLayout'
 import { copyText, fmtDateTime } from '@/lib/utils'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { Button, ConfirmDialog, Kbd, StatusBadge, Tabs, Thumb } from '@/components/ui'
 
-function groups(scene: Scene, topic: Topic | undefined): GroupDef<Scene>[] {
+function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined): GroupDef<Scene>[] {
   const status = scene.status
   return [
     {
@@ -30,7 +31,7 @@ function groups(scene: Scene, topic: Topic | undefined): GroupDef<Scene>[] {
     {
       title: 'Кадр',
       fields: [
-        { key: 'base_image_url', type: 'url', mono: true, extra: (v, set) => <PathHint expected={scenePath(scene, topic)} value={v} onChange={set} /> },
+        { key: 'base_image_url', type: 'url', mono: true, extra: (v, set) => <PathHint expected={scenePath(scene, topic, season)} value={v} onChange={set} /> },
         { key: 'manual_prompt', label: 'manual_prompt — сработавший', type: 'textarea', rows: 4, mono: true },
         { key: 'visual_prompt', label: 'visual_prompt — авто', type: 'textarea', rows: 4, mono: true },
         { key: 'shot_type' },
@@ -142,7 +143,7 @@ export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene
 }
 
 function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; onDelete: (id: string) => void }) {
-  const { updateScene, updateScenes, generateSceneImages, topics, characters } = useData()
+  const { updateScene, updateScenes, generateSceneImages, topics, characters, seasons } = useData()
   const navigate = useNavigate()
   const seasonId = topics.find((t) => t.topic_id === scene.topic)?.season_id
   const cast = useMemo(() => sceneCharacters(scene, seasonCharacters(seasonId, characters)), [scene, characters, seasonId])
@@ -155,7 +156,9 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const [img, setImg] = useState(0)
   const [applyAll, setApplyAll] = useState(false)
   const topic = topics.find((t) => t.topic_id === scene.topic)
-  const fieldGroups = useMemo(() => (draft ? groups(draft, topic) : []), [draft, topic])
+  const season = seasons.find((x) => x.id === topic?.season_id)
+  const codeGroups = useMemo(() => (draft ? groups(draft, topic, season) : []), [draft, topic, season])
+  const layout = useCardLayout('card:scene', codeGroups, draft)
   if (!draft) return null
 
   const images = [...(scene.char_img_url ?? []), scene.base_image_url, scene.event_img].filter((x): x is string => !!x)
@@ -248,7 +251,14 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
             </blockquote>
           )}
         </div>
-        <FieldGroups groups={fieldGroups} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
+        <FieldGroups groups={layout.groups} draft={draft} onChange={set} dirtyKeys={dirtyKeys} fieldAction={layout.fieldAction} />
+        {layout.customized && (
+          <div className="border-t border-border px-4 py-2 text-right">
+            <button className="text-xs text-fg-3 hover:text-accent-hover" onClick={layout.reset}>
+              Вернуть раскладку полей по умолчанию
+            </button>
+          </div>
+        )}
       </PanelScroll>
 
       <PanelFooter>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { BookOpen, Clapperboard, Wand2, LayoutGrid, Library, Plus, ScrollText, Theater, Trash2, Unlink } from 'lucide-react'
+import { BookOpen, Clapperboard, Wand2, LayoutGrid, Library, Plus, ScrollText, Theater, Trash2 } from 'lucide-react'
 import type { Character, Season, Topic } from '@/types'
 import { SEASON_KEY, STAGES, characterImages, seasonCharacters, seasonEpisodes, seasonTitle, topicStage, topicTitle, useData, useScenesByTopic, type Stage } from '@/store/data'
 import { useDraft } from '@/lib/useDraft'
@@ -67,11 +67,12 @@ function CastPicker({ value, onChange, pool }: { value: unknown; onChange: (v: u
   )
 }
 
-const episodeGroups = (pool: Character[]): GroupDef<Topic>[] => [
+const episodeGroups = (pool: Character[], seasons: Season[]): GroupDef<Topic>[] => [
   {
     title: 'Серия',
     fields: [
       { key: 'title', type: 'textarea', rows: 2, required: true },
+      { key: 'season_id', label: 'сезон — сменить, чтобы перенести серию', type: 'select', required: true, options: seasons.map((s) => ({ value: s.id, label: seasonTitle(s) })) },
       { key: 'backlog', label: 'номер серии', type: 'number', mono: true },
       { key: 'logline', label: 'логлайн: кто чего хочет, что мешает, чем платит', type: 'textarea', rows: 3 },
       { key: 'chars', label: 'персонажи серии — выберите из библиотеки сезона', type: 'list', rows: 3, mono: true, extra: (v, set) => <CastPicker value={v} onChange={set} pool={pool} /> },
@@ -178,7 +179,7 @@ function SeasonView({ seasonId }: { seasonId: string }) {
               ) : null,
             )}
           </div>
-          <Button variant="ghost" size="icon" className="ml-auto hover:text-danger" title="Удалить сезон" aria-label="Удалить сезон" onClick={() => setConfirmDelete(true)}>
+          <Button variant="ghost" size="icon" className="ml-auto hover:text-danger" title="Удалить сезон" aria-label="Удалить сезон" onClick={() => (episodes.length ? toast.error('В сезоне есть серии', { description: 'Сначала перенесите их в другой сезон или удалите.' }) : setConfirmDelete(true))}>
             <Trash2 />
           </Button>
         </div>
@@ -230,7 +231,7 @@ function SeasonView({ seasonId }: { seasonId: string }) {
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Удалить сезон?"
-        description={`Серии (${episodes.length}) останутся в контент-плане, просто без сезона.`}
+        description="Сезон без серий. Папку сезона на диске админка не трогает."
         onConfirm={async () => {
           await deleteSeasons([seasonId])
           localStorage.removeItem(SEASON_KEY)
@@ -274,8 +275,8 @@ function EpisodeColumn({ topic, stage, active, onOpen }: { topic: Topic; stage: 
 }
 
 function EpisodeBody({ topic, onClose }: { topic: Topic; onClose: () => void }) {
-  const { updateTopic, characters } = useData()
-  const groups = useMemo(() => episodeGroups(seasonCharacters(topic.season_id, characters)), [topic.season_id, characters])
+  const { updateTopic, characters, seasons } = useData()
+  const groups = useMemo(() => episodeGroups(seasonCharacters(topic.season_id, characters), seasons), [topic.season_id, characters, seasons])
   const [confirmScript, setConfirmScript] = useState(false)
   const [sending, setSending] = useState(false)
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(topic, 'topic_id', (patch) => updateTopic(topic.topic_id, patch))
@@ -331,18 +332,7 @@ function EpisodeBody({ topic, onClose }: { topic: Topic; onClose: () => void }) 
               Отмена
             </Button>
           </>
-        ) : (
-          <Button
-            variant="ghost"
-            className="ml-auto"
-            title="Ролик останется в контент-плане"
-            onClick={async () => {
-              if (await updateTopic(id, { season_id: null })) onClose()
-            }}
-          >
-            <Unlink /> Убрать из сезона
-          </Button>
-        )}
+        ) : null}
       </PanelFooter>
       <ConfirmDialog
         open={confirmScript}

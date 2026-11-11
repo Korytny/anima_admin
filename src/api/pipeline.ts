@@ -1,6 +1,6 @@
 // Запуск генераций в n8n через вебхук.
 // n8n сам пишет результат в БД (service_role): base_image_url = путь, status = 'ready' | 'error'.
-import type { Character, Scene, Topic } from '@/types'
+import type { Character, Scene, Season, Topic } from '@/types'
 import { outputPrefix } from '@/lib/media'
 import { supabase } from '@/lib/supabase'
 
@@ -8,7 +8,7 @@ const IMAGE_WEBHOOK = import.meta.env.VITE_N8N_IMAGE_WEBHOOK as string | undefin
 
 export const pipelineConfigured = !!IMAGE_WEBHOOK
 
-export async function requestSceneImage(scene: Scene, topic: Topic | undefined, characters: Character[]) {
+export async function requestSceneImage(scene: Scene, topic: Topic | undefined, season: Season | undefined, characters: Character[]) {
   if (!IMAGE_WEBHOOK) throw new Error('Не задан VITE_N8N_IMAGE_WEBHOOK в .env.local')
   const { data } = await supabase.auth.getUser()
   const res = await fetch(IMAGE_WEBHOOK, {
@@ -19,7 +19,7 @@ export async function requestSceneImage(scene: Scene, topic: Topic | undefined, 
       scene_id: scene.scene_id,
       topic_id: scene.topic,
       folder: topic?.folder ?? null,
-      output_prefix: outputPrefix(scene, topic),
+      output_prefix: outputPrefix(scene, topic, season), // anima/<сезон>/<серия>/<код>
       prompt: scene.manual_prompt || scene.visual_prompt, // ручной приоритетнее
       visual_style: topic?.visual_style ?? null,
       requested_by: data.user?.email ?? null,

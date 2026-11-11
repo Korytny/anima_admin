@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { Clapperboard, Download, Eye, Film, Music, Plus, Search, Theater, Trash2, X } from 'lucide-react'
 import type { Topic } from '@/types'
-import { ALL_SEASONS, NO_SEASON, SEASON_KEY, seasonEpisodes, seasonTitle, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { ALL_SEASONS, SEASON_KEY, seasonEpisodes, seasonTitle, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { copyText, downloadCsv, fmtBytes, fmtDateTime, fmtDuration, timeAgo, useHotkey, usePersistentState } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
@@ -41,7 +42,7 @@ export function ContentPlanPage() {
   const [seasonPick, setSeasonPick] = usePersistentState<string | null>(SEASON_KEY, null)
   // не выбран или удалён → первый сезон; сезонов нет → все
   const season =
-    seasonPick === ALL_SEASONS || seasonPick === NO_SEASON || seasons.some((s) => s.id === seasonPick) ? seasonPick! : (seasons[0]?.id ?? ALL_SEASONS)
+    seasonPick === ALL_SEASONS || seasons.some((s) => s.id === seasonPick) ? seasonPick! : (seasons[0]?.id ?? ALL_SEASONS)
   const [selection, setSelection] = useState<RowSelectionState>({})
   const [confirm, setConfirm] = useState<string[] | null>(null)
 
@@ -57,7 +58,7 @@ export function ContentPlanPage() {
   const filtered = useMemo(() => {
     const q = filters.q.trim().toLowerCase()
     return topics.filter((t) => {
-      if (season === NO_SEASON ? t.season_id : season !== ALL_SEASONS && t.season_id !== season) return false
+      if (season !== ALL_SEASONS && t.season_id !== season) return false
       if (filters.status.length && !filters.status.includes(t.status || NO_STATUS)) return false
       if (filters.video === 'yes' && !t.url_final) return false
       if (filters.video === 'no' && t.url_final) return false
@@ -72,10 +73,11 @@ export function ContentPlanPage() {
   const selectedIds = Object.keys(selection)
 
   const create = async () => {
-    // новый ролик — в выбранный сезон, следующим номером
-    const inSeason = season !== ALL_SEASONS && season !== NO_SEASON
-    const n = inSeason ? Math.max(0, ...seasonEpisodes(season, topics).map((x) => x.backlog ?? 0)) + 1 : undefined
-    const t = await createTopic(inSeason ? { season_id: season, backlog: n } : undefined)
+    // новый ролик — в выбранный сезон (при «Все ролики» — в первый), следующим номером. Ролик без сезона не бывает.
+    const target = season !== ALL_SEASONS ? season : seasons[0]?.id
+    if (!target) return void toast.error('Сначала создайте сезон', { description: 'У каждого ролика должен быть сезон.' })
+    const n = Math.max(0, ...seasonEpisodes(target, topics).map((x) => x.backlog ?? 0)) + 1
+    const t = await createTopic({ season_id: target, backlog: n })
     if (t) navigate(`/topics/${t.topic_id}`)
   }
   useHotkey('n', (e) => {
@@ -278,7 +280,6 @@ export function ContentPlanPage() {
                 aria-label="Сезон"
                 options={[
                   ...seasons.map((s) => ({ value: s.id, label: seasonTitle(s) })),
-                  { value: NO_SEASON, label: 'Без сезона' },
                   { value: ALL_SEASONS, label: 'Все ролики' },
                 ]}
               />

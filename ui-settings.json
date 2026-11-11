@@ -1,0 +1,32 @@
+{
+  "kind": "anima-admin-ui",
+  "exported_at": "2026-11-11T10:44:46.643Z",
+  "settings": {
+    "agents:columns": "{\"model\":false}",
+    "agents:density": "\"default\"",
+    "agents:sorting": "[]",
+    "card:scene:layout": "{\"order\":\"Остальное\",\"lora\":\"Кадр\",\"inpaint_filename\":\"Остальное\"}",
+    "characters:columns": "{\"name\":true,\"number\":true,\"role_key\":true,\"scenes\":true}",
+    "characters:density": "\"default\"",
+    "characters:order": "[]",
+    "characters:sizes": "{}",
+    "characters:sorting": "[]",
+    "scenes:columns": "{\"music\":false,\"status\":false,\"environment\":true,\"order\":false,\"audio_duration\":false,\"video\":false,\"lora\":true}",
+    "scenes:density": "\"compact\"",
+    "scenes:order": "[\"select\",\"num\",\"preview\",\"status\",\"cast\",\"environment\",\"speaking_character\",\"dialogue_text\",\"lora\",\"action\",\"shot_type\",\"location_desc\",\"time\",\"audio_duration\",\"music\",\"video\",\"order\",\"updated_at\",\"actions\",\"action_prompt\",\"audio_file\",\"base_image_url\",\"char_img_url\",\"character\",\"created_at\",\"crop\",\"daytime\",\"dialogue_direction\",\"event_img\",\"event_prompt\",\"face\",\"inpaint_filename\",\"location_details\",\"location_num\",\"manual_prompt\",\"music_file\",\"noice\",\"scena\",\"scene_id\",\"shot_num\",\"speaker_voice_profile\",\"speaking_character_voice\",\"topic\",\"video_file\",\"video_sub\",\"visual_prompt\"]",
+    "scenes:sizes": "{\"cast\":226,\"environment\":271}",
+    "scenes:sorting": "[]",
+    "tasks:columns": "{\"runpod_job_id\":false}",
+    "tasks:density": "\"default\"",
+    "tasks:sorting": "[]",
+    "topics:columns": "{\"visual_style\":true,\"size\":false,\"backlog\":true,\"music\":false,\"duration\":true,\"topic_id\":false}",
+    "topics:density": "\"default\"",
+    "topics:order": "[\"select\",\"backlog\",\"title\",\"chars\",\"scenes\",\"topic_id\",\"visual_style\",\"preview\",\"status\",\"duration\",\"video\",\"music\",\"season\",\"size\",\"updated_at\",\"actions\",\"all\",\"all_eng\",\"beats\",\"extended_description\",\"file_tiktok\",\"file_tiktok_size\",\"folder\",\"logline\",\"script_scenas\",\"script_shots\",\"season_id\",\"source_excerpt\",\"url\",\"url_final\"]",
+    "topics:sizes": "{\"title\":133,\"video\":101,\"visual_style\":125}",
+    "topics:sorting": "[{\"id\":\"backlog\",\"desc\":false}]",
+    "ui:sidebar-collapsed": "false",
+    "videos:columns": "{\"user_id\":false,\"updated_at\":false}",
+    "videos:density": "\"default\"",
+    "videos:sorting": "[]"
+  }
+}

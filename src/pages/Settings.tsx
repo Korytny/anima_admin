@@ -1,18 +1,20 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Navigate, useParams } from 'react-router-dom'
-import { Check, Database, Eraser, HardDrive, KeyRound, Loader2, Mail, Plug, Server, Shield, SlidersHorizontal, Sparkles, Trash2, UserPlus, X } from 'lucide-react'
+import { Check, Database, Download, LayoutTemplate, Eraser, HardDrive, KeyRound, Loader2, Mail, Plug, Server, Shield, SlidersHorizontal, Sparkles, Trash2, UserPlus, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import type { Integration, SystemSettings, User, UserRole } from '@/types'
 import { useData } from '@/store/data'
 import { ROLES, toOptions } from '@/lib/status'
 import { cn, fmtDateTime, timeAgo } from '@/lib/utils'
+import { exportUiSettings } from '@/lib/uiSettings'
 import { Avatar, Button, ConfirmDialog, Input, Modal, Select, Skeleton } from '@/components/ui'
 
 const SECTIONS = [
   { id: 'access', label: 'Права доступа', icon: Shield },
   { id: 'integrations', label: 'Интеграции', icon: Plug },
   { id: 'system', label: 'Системные', icon: SlidersHorizontal },
+  { id: 'interface', label: 'Интерфейс', icon: LayoutTemplate },
 ] as const
 
 export function SettingsPage() {
@@ -38,6 +40,7 @@ export function SettingsPage() {
           {section === 'access' && <AccessSection />}
           {section === 'integrations' && <IntegrationsSection />}
           {section === 'system' && <SystemSection />}
+          {section === 'interface' && <InterfaceSection />}
         </div>
       </div>
     </div>
@@ -453,5 +456,34 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </div>
       {children}
     </div>
+  )
+}
+
+function InterfaceSection() {
+  const download = () => {
+    const blob = new Blob([exportUiSettings()], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'ui-settings.json'
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  return (
+    <>
+      <SectionTitle
+        title="Настройки интерфейса"
+        description="Столбцы таблиц (видимость, ширина, порядок, сортировка, плотность), раскладка полей карточек, свёрнутый сайдбар. Хранятся в этом браузере."
+      />
+      <div className="space-y-3 rounded-xl border border-border bg-surface p-5 text-[13px] text-fg-2">
+        <p>
+          Скачайте файл и положите его в корень проекта как <code className="font-mono text-xs text-fg">ui-settings.json</code>. После сборки и деплоя админка при
+          запуске применит эти настройки во всех браузерах: ключи из файла заменят локальные, остальные останутся.
+        </p>
+        <p className="text-fg-3">Фильтры, выбранный сезон и ролик в файл не попадают.</p>
+        <Button variant="primary" onClick={download}>
+          <Download /> Скачать ui-settings.json
+        </Button>
+      </div>
+    </>
   )
 }

@@ -171,15 +171,12 @@ function TopicScenes({ topicId }: { topicId: string }) {
       {
         id: 'time',
         accessorFn: (s) => s.time ?? -1,
-        header: 'Время',
-        size: 110,
-        meta: { label: 'Время' },
-        cell: ({ row }) => (
-          <span className="text-fg-2">
-            {row.original.time != null && <span className="font-mono text-xs">{row.original.time}</span>} {row.original.daytime}
-          </span>
-        ),
+        header: 'Сек',
+        size: 64,
+        meta: { label: 'time — длительность шота, сек' },
+        cell: ({ row }) => <span className="font-mono text-xs text-fg-2">{row.original.time ?? '—'}</span>,
       },
+      { accessorKey: 'daytime', header: 'Время суток', size: 110, meta: { label: 'Время суток' }, cell: ({ getValue }) => <span className="text-fg-2">{getValue() || '—'}</span> },
       {
         accessorKey: 'audio_duration',
         header: 'Аудио',

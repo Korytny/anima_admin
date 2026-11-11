@@ -23,7 +23,7 @@ shadcn/ui как пакет не используется — свои комп�
 ## База данных (Supabase)
 
 - `public.topics` — ролики. PK `topic_id uuid`. Поля: title (NOT NULL), status (text), extended_description (сейчас не используется), script_scenas (сценарий серии от сценариста), script_shots (шоты от Редактора), music, chars text[], duration, backlog, visual_style, url, url_final, size, file_tiktok(+_size), all/all_eng jsonb, updated_at. **Нет created_at.**
-- `public.seasons` — сезоны (арки из серий): title, logline, theme (сквозной вопрос), bible (markdown для агентов), source (первоисточник), status. Серия = topic с `season_id`; **номер серии = `topics.backlog`** (отдельной колонки нет). У серии: `logline`, `beats text[]`, `source_excerpt`. SQL: `supabase/seasons.sql`.
+- `public.seasons` — сезоны (арки из серий): title, logline, theme (сквозной вопрос), bible (markdown для агентов), source (первоисточник), status. **У каждого ролика есть сезон** — правило держит админка (выбор сезона обязателен, сезон с сериями не удаляется); в БД ограничений не ставим. Серия = topic с `season_id`; **номер серии = `topics.backlog`** (отдельной колонки нет). У серии: `logline`, `beats text[]`, `source_excerpt`. SQL: `supabase/seasons.sql`.
 - `public.scenes` — сцены/шоты. PK `scene_id uuid`, `topic uuid → topics.topic_id`. Порядок: `scena` (номер сцены), затем `shot_num`. `char_img_url`, `character` — text[]; `speaker_voice_profile` — jsonb.
 - `public.characters` — **библиотека персонажей сезона**. PK `id uuid`, `season uuid` (→ seasons.id; колонка переименована из `topic`, в старых записях там id ролика). Возрастные варианты — отдельные записи (`Karna_boy`, `Karna`). Серия выбирает своих в `topics.chars` (карточка серии, выбор из библиотеки). Со сценой связаны **по имени**: `scenes.character[]` / `speaking_character` ↔ `characters.name` среди персонажей сезона серии (`seasonCharacters()` + `sceneCharacters()` в store). Картинки — в одной папке сезона `anima/<seasons.folder>/characters/`. SQL: `supabase/characters_season.sql`. Файлы персонажа: `base_img`, `pers_file`, `filename` (какой главный — не определено, показываем все). `updated_at` нет.
 - `public.agents` — агенты: `id bigint`, name, description, `prompt` (markdown, системный промпт), model, `is_active bool`, created_at. Ключей провайдеров в таблице нет. `{{var}}` в промпте показываются как переменные.
@@ -68,7 +68,7 @@ shadcn/ui как пакет не используется — свои комп�
 Пары `visual_prompt` → `manual_prompt` потом используем, чтобы улучшить автоматические промпты.
 - `visual_prompt` — **авто-промпт, вручную не перезаписываем**; правка человека идёт только в `manual_prompt`. В карточке сцены показывается разница (`PromptDiff`).
 - Пути в БД — **относительно ComfyUI/output** (схема в `lib/media.ts`):
-  `anima/<seasons.folder>/characters/<slug имени>.png` (персонажи — общие на сезон), `anima/<topics.folder>/scenes/<scena 2 знака>-<shot_num>.png`. `seasons.folder` назначается так же, как `topics.folder` (`assignSeasonFolders`).
+  `anima/<seasons.folder>/characters/<slug имени>.png` (персонажи — общие на сезон), `anima/<seasons.folder>/<topics.folder>/<scena 2 знака>-<shot_num>.png` (кадры лежат прямо в папке серии, без `scenes/`). `seasons.folder` назначается так же, как `topics.folder` (`assignSeasonFolders`).
 - `topics.folder` — папка ролика: транслит названия, при совпадении `-2`, `-3`… Назначает **админка** (единственное место, где создаются ролики) один раз, как только у ролика есть настоящее название (не «Новый ролик»): `assignFolders` в `store/data.tsx`, `uniqueFolder` в `lib/media.ts`. Дальше не меняется — переименование ролика пути не ломает. В БД — только колонка и уникальный индекс `topics_folder_key` (`supabase/topic_folder.sql`), триггеров нет.
   Полный путь тоже понимается: корень `VITE_MEDIA_ROOT` (по умолчанию = `MEDIA_DIR`) или всё до `/output/` отрезается. `PathHint` под полем подсказывает путь и предлагает сократить полный.
 - Класть **оригинальные PNG из ComfyUI** (в них зашиты workflow/промпт/seed) — позже вытащим `manual_prompt` автоматически.
@@ -76,7 +76,7 @@ shadcn/ui как пакет не используется — свои комп�
 
 **Генерация из админки (n8n).**
 - Админка ставит `scenes.status = 'generating'` и шлёт POST на вебхук n8n (`VITE_N8N_IMAGE_WEBHOOK`, в dev идёт через прокси `/n8n`, чтобы не было CORS). Тело запроса: `{action:'scene_image', scene_id, topic_id, output_prefix, prompt (= manual_prompt || visual_prompt), visual_style, requested_by, scene, characters}` (`characters` — записи персонажей сцены). Если вебхук ответил ошибкой, статус становится `'error'`.
-- n8n запускает ComfyUI с `filename_prefix = output_prefix` (`anima/<folder>/scenes/03-1`), затем пишет в БД относительный путь `base_image_url = 'anima/…/scenes/03-1_00001_.png'` и `status = 'ready'` (или `'error'`).
+- n8n запускает ComfyUI с `filename_prefix = output_prefix` (`anima/<сезон>/<серия>/03-1`), затем пишет в БД относительный путь `base_image_url = 'anima/<сезон>/<серия>/03-1_00001_.png'` и `status = 'ready'` (или `'error'`).
 - Пока есть сцены в статусе `generating`, админка обновляет данные каждые 4 с.
 - Файлы лежат на диске сервера (ComfyUI/output), в Supabase Storage не кладём. Фронт строит URL через `mediaUrl()` (`lib/media.ts`) как `VITE_MEDIA_BASE_URL` + путь; полные http-URL отдаются как есть. В dev папка `MEDIA_DIR` раздаётся плагином в `vite.config.ts` по `/media`, в проде это делает nginx.
 
@@ -105,7 +105,7 @@ src/
   lib/status.ts       — статусы (лейблы/цвета) + statusMeta/statusOptions с fallback для неизвестных
   lib/useDraft.ts     — черновик сущности: dirty-поля, Cmd+S, подтягивание внешних изменений в нетронутые поля
   components/AuthGate.tsx   — вход (пароль или magic link), useSession, signOut
-  components/DataTable.tsx  — общая таблица: сортировка, выбор, видимость столбцов, плотность, виртуализация
+  components/DataTable.tsx  — общая таблица: сортировка, выбор, видимость/ширина/порядок столбцов (localStorage), плотность, виртуализация
   components/SidePanel.tsx  — карточка справа (+ PanelScroll, PanelFooter)
   components/FieldGroups.tsx — декларативный редактор полей (text/textarea/number/select/list(text[])/json(jsonb)/readonly)
   components/layout/  — Sidebar, Topbar, CommandMenu, AppLayout
@@ -122,6 +122,7 @@ supabase/policies.sql — admin_users, is_admin(), RLS-политики, FK scen
 - Пустые значения nullable-полей сохраняются как `null` (не `''`); NOT NULL поля помечаются `required` в FieldDef.
 - Маршруты: `/seasons/:seasonId?` (`?ep=<topic_id>`), `/dashboard`, `/topics/:topicId?`, `/scenes/:topicId?` (`?scene=<id>`), `/script/:topicId?`, `/storyboard/:topicId?` (`?scene=<id>`), `/characters/:seasonId?` (`?character=<id>`), `/agents` (`?agent=`), `/settings/:section?`. Выбранная сущность — в URL.
 - Настройки таблиц и фильтры — в localStorage по `storageKey`.
+- Эталон вида владельца — `ui-settings.json` в корне проекта (скачивается в «Настройки → Интерфейс», `lib/uiSettings.ts`). При старте применяется, если `exported_at` новее применённого: ключи столбцов/раскладки карточек перезаписываются, остальное (фильтры, выбор сезона/ролика) не трогается.
 - Карточки описываются через `GroupDef/FieldDef`; новое поле БД = строка в конфиге группы.
 - Права проверяет БД (RLS); фронт ничего не скрывает «для безопасности».
 - **Всё, что создаём в БД (таблицы, колонки, функции, триггеры, политики), лежит в `supabase/*.sql`.** Каждый объект подписан через `comment on … is '… Источник: anima_admin/supabase/<файл>.sql'`. Скрипты идемпотентные. Логику держим в коде админки; триггеры — только если в таблицу пишут несколько участников и иначе не обойтись (сейчас триггеров нет).

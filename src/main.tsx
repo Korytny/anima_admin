@@ -15,6 +15,10 @@ import { ScriptPage } from '@/pages/Script'
 import { AgentsPage } from '@/pages/Agents'
 import { SeasonsPage } from '@/pages/Seasons'
 import { SettingsPage } from '@/pages/Settings'
+import { applyBundledUiSettings } from '@/lib/uiSettings'
+
+// Эталонные настройки интерфейса владельца (ui-settings.json в корне) — до первого чтения localStorage
+applyBundledUiSettings()
 
 const router = createBrowserRouter([
   {

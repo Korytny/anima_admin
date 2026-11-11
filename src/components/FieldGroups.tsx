@@ -27,22 +27,27 @@ export interface GroupDef<T> {
   flat?: boolean
 }
 
+export type FieldAction = (key: string, group: string) => ReactNode
+
 /** Сгруппированный редактор полей сущности: label | input. */
 export function FieldGroups<T extends object>({
   groups,
   draft,
   onChange,
   dirtyKeys,
+  fieldAction,
 }: {
   groups: GroupDef<T>[]
   draft: T
   onChange: (key: keyof T & string, value: unknown) => void
   dirtyKeys?: Set<string>
+  /** Кнопка у названия поля (перенос между группами — useCardLayout). */
+  fieldAction?: FieldAction
 }) {
   return (
     <div className="divide-y divide-border">
       {groups.map((g) => (
-        <Group key={g.title} group={g} draft={draft} onChange={onChange} dirtyKeys={dirtyKeys} />
+        <Group key={g.title} group={g} draft={draft} onChange={onChange} dirtyKeys={dirtyKeys} fieldAction={fieldAction} />
       ))}
     </div>
   )
@@ -53,11 +58,13 @@ function Group<T extends object>({
   draft,
   onChange,
   dirtyKeys,
+  fieldAction,
 }: {
   group: GroupDef<T>
   draft: T
   onChange: (key: keyof T & string, value: unknown) => void
   dirtyKeys?: Set<string>
+  fieldAction?: FieldAction
 }) {
   const [open, setOpen] = useState(group.defaultOpen ?? true)
   const dirtyCount = dirtyKeys ? group.fields.filter((f) => dirtyKeys.has(f.key)).length : 0
@@ -65,7 +72,7 @@ function Group<T extends object>({
     return (
       <section className="grid grid-cols-[minmax(96px,34%)_1fr] gap-x-3 gap-y-2 px-4 py-3">
         {group.fields.map((f) => (
-          <FieldRow key={f.key} field={f} value={draft[f.key]} onChange={(v) => onChange(f.key, v)} dirty={dirtyKeys?.has(f.key)} />
+          <FieldRow key={f.key} field={f} value={draft[f.key]} onChange={(v) => onChange(f.key, v)} dirty={dirtyKeys?.has(f.key)} action={fieldAction?.(f.key, group.title)} />
         ))}
       </section>
     )
@@ -83,7 +90,7 @@ function Group<T extends object>({
       {open && (
         <div className="grid grid-cols-[minmax(96px,34%)_1fr] gap-x-3 gap-y-2 px-4 pb-4">
           {group.fields.map((f) => (
-            <FieldRow key={f.key} field={f} value={draft[f.key]} onChange={(v) => onChange(f.key, v)} dirty={dirtyKeys?.has(f.key)} />
+            <FieldRow key={f.key} field={f} value={draft[f.key]} onChange={(v) => onChange(f.key, v)} dirty={dirtyKeys?.has(f.key)} action={fieldAction?.(f.key, group.title)} />
           ))}
         </div>
       )}
@@ -91,18 +98,17 @@ function Group<T extends object>({
   )
 }
 
-function FieldRow<T>({ field, value, onChange, dirty }: { field: FieldDef<T>; value: unknown; onChange: (v: unknown) => void; dirty?: boolean }) {
+function FieldRow<T>({ field, value, onChange, dirty, action }: { field: FieldDef<T>; value: unknown; onChange: (v: unknown) => void; dirty?: boolean; action?: ReactNode }) {
   const id = `f-${field.key}`
   const type = field.type ?? 'text'
   const wide = type === 'textarea' || type === 'json' || type === 'list'
   const label = (
-    <label
-      htmlFor={id}
-      className={cn('truncate pt-2 font-mono text-xs text-fg-3', dirty && 'text-gold', wide && 'col-span-2 pt-1 pb-0')}
-      title={field.key}
-    >
-      {field.label ?? field.key}
-    </label>
+    <div className={cn('group/field flex min-w-0 items-start gap-1 pt-2', wide && 'col-span-2 pt-1 pb-0')}>
+      <label htmlFor={id} className={cn('truncate font-mono text-xs text-fg-3', dirty && 'text-gold')} title={field.key}>
+        {field.label ?? field.key}
+      </label>
+      {action && <span className="-my-0.5 ml-auto shrink-0">{action}</span>}
+    </div>
   )
   return (
     <>

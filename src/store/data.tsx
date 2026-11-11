@@ -200,7 +200,8 @@ function useDataStore() {
         const results = await Promise.allSettled(
           scenes.map((sc) => {
             const t = topics.find((x) => x.topic_id === sc.topic)
-            return requestSceneImage(sc, t, sceneCharacters(sc, seasonCharacters(t?.season_id, characters)))
+            const season = stateRef.current.seasons.find((x) => x.id === t?.season_id)
+            return requestSceneImage(sc, t, season, sceneCharacters(sc, seasonCharacters(t?.season_id, characters)))
           }),
         )
         const failed = ids.filter((_, i) => results[i].status === 'rejected')
@@ -258,11 +259,7 @@ function useDataStore() {
       async deleteSeasons(ids: string[]) {
         const ok = await run(api.deleteSeasons(ids).then(() => true), 'Сезон удалён')
         if (ok)
-          setState((s) => ({
-            ...s,
-            seasons: s.seasons.filter((x) => !ids.includes(x.id)),
-            topics: s.topics.map((t) => (t.season_id && ids.includes(t.season_id) ? { ...t, season_id: null } : t)),
-          }))
+          setState((s) => ({ ...s, seasons: s.seasons.filter((x) => !ids.includes(x.id)) })) // сезон с сериями страница «Сезоны» удалить не даёт
       },
 
       async deleteAgents(ids: number[]) {
@@ -354,10 +351,9 @@ export const characterTitle = (c: Character) => c.name || `Персонаж ${sh
 
 // ----- сезоны и стадии серии
 
-/** Выбранный сезон (localStorage): id сезона | ALL_SEASONS | NO_SEASON. Общий для «Сезонов» и «Контент-плана». */
+/** Выбранный сезон (localStorage): id сезона | ALL_SEASONS. Общий для «Сезонов» и «Контент-плана». У каждого ролика есть сезон. */
 export const SEASON_KEY = 'seasons:last'
 export const ALL_SEASONS = 'all'
-export const NO_SEASON = 'none'
 
 export const seasonTitle = (s?: Pick<Season, 'title' | 'id'> | null) => (s ? s.title || `Сезон ${shortId(s.id)}` : '—')
 

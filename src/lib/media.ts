@@ -1,7 +1,7 @@
 // Медиа лежат на диске сервера в ComfyUI/output. В БД — путь ОТНОСИТЕЛЬНО output:
-//   anima/<topics.folder>/characters/<имя>.png
-//   anima/<topics.folder>/scenes/<scena>-<shot_num>.png
-// topics.folder — транслит названия (+ -2, -3 при совпадении), назначает админка один раз (uniqueFolder).
+//   anima/<seasons.folder>/characters/<имя>.png                 — персонажи сезона
+//   anima/<seasons.folder>/<topics.folder>/<scena>-<shot_num>.png — кадры серии (у каждого ролика есть сезон)
+// topics.folder / seasons.folder — транслит названия (+ -2, -3 при совпадении), назначает админка один раз (uniqueFolder).
 // Полный путь тоже понимаем — отрезаем корень: /…/ComfyUI/output/anima/…, c:/ComfyUI/…/output/…, C:\…\output\…
 // Полные URL (http…) отдаются как есть.
 import type { Character, Scene, Season, Topic } from '@/types'
@@ -65,20 +65,22 @@ export function uniqueFolder(title: string | null | undefined, taken: Set<string
   return name
 }
 
-type TopicRef = Pick<Topic, 'topic_id' | 'folder'> | undefined
+type TopicRef = Pick<Topic, 'topic_id' | 'folder' | 'season_id'> | undefined
+type SeasonRef = Pick<Season, 'folder'> | undefined
 
-/** Папка ролика; пока folder не назначен — по topic_id. */
-const topicDir = (topic: TopicRef, topicId: string | null) => `anima/${topic?.folder || topicId || 'no-topic'}`
+/** Папка ролика — внутри папки сезона: anima/<сезон>/<ролик>. Пока folder не назначен — по id. */
+const topicDir = (topic: TopicRef, topicId: string | null, season: SeasonRef) =>
+  `anima/${season?.folder || topic?.season_id || 'no-season'}/${topic?.folder || topicId || 'no-topic'}`
 
 /** «03-1» — код кадра: сцена (2 знака, для сортировки в папке) и шот. */
 export const sceneCode = (s: Pick<Scene, 'scena' | 'shot_num'>) => `${String(s.scena ?? 0).padStart(2, '0')}-${s.shot_num ?? 1}`
 
 /** Ожидаемый путь кадра сцены. */
-export const scenePath = (s: Scene, topic: TopicRef) => `${topicDir(topic, s.topic)}/scenes/${sceneCode(s)}.png`
+export const scenePath = (s: Scene, topic: TopicRef, season: SeasonRef) => `${topicDir(topic, s.topic, season)}/${sceneCode(s)}.png`
 
 /** Ожидаемый путь картинки персонажа: папка сезона (все персонажи сезона в одной папке). */
 export const characterPath = (c: Character, season: Pick<Season, 'id' | 'folder'> | undefined) =>
   `anima/${season?.folder || c.season || 'no-season'}/characters/${slug(c.name ?? c.id)}.png`
 
 /** filename_prefix для SaveImage в ComfyUI (ComfyUI сам допишет _00001_.png). */
-export const outputPrefix = (s: Scene, topic: TopicRef) => `${topicDir(topic, s.topic)}/scenes/${sceneCode(s)}`
+export const outputPrefix = (s: Scene, topic: TopicRef, season: SeasonRef) => `${topicDir(topic, s.topic, season)}/${sceneCode(s)}`
