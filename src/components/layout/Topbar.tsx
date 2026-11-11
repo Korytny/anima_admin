@@ -13,7 +13,7 @@ function useBreadcrumbs() {
   const [, section, id] = pathname.split('/')
   const nav = NAV.find((n) => n.to === `/${section}`)
   const crumbs: { label: string; to?: string }[] = [{ label: nav?.label ?? 'Pipeline Manager', to: nav?.to }]
-  if (id && ['topics', 'script', 'scenes', 'storyboard'].includes(section)) {
+  if (id && ['topics', 'script', 'scenes', 'storyboard', 'voice', 'animation', 'music', 'montage'].includes(section)) {
     const t = topics.find((x) => x.topic_id === id)
     crumbs.push({ label: topicTitle(t ?? { title: '', topic_id: id }), to: `/topics/${id}` })
   }

@@ -11,6 +11,10 @@ import { ContentPlanPage } from '@/pages/ContentPlan'
 import { ScenesPage } from '@/pages/Scenes'
 import { CharactersPage } from '@/pages/Characters'
 import { StoryboardPage } from '@/pages/Storyboard'
+import { VoicePage } from '@/pages/Voice'
+import { AnimationPage } from '@/pages/Animation'
+import { MontagePage } from '@/pages/Montage'
+import { MusicPage } from '@/pages/Music'
 import { ScriptPage } from '@/pages/Script'
 import { AgentsPage } from '@/pages/Agents'
 import { SeasonsPage } from '@/pages/Seasons'
@@ -31,6 +35,10 @@ const router = createBrowserRouter([
       { path: 'scenes/:topicId?', element: <ScenesPage /> },
       { path: 'script/:topicId?', element: <ScriptPage /> },
       { path: 'storyboard/:topicId?', element: <StoryboardPage /> },
+      { path: 'voice/:topicId?', element: <VoicePage /> },
+      { path: 'animation/:topicId?', element: <AnimationPage /> },
+      { path: 'music/:topicId?', element: <MusicPage /> },
+      { path: 'montage/:topicId?', element: <MontagePage /> },
       { path: 'characters/:seasonId?', element: <CharactersPage /> },
       { path: 'agents', element: <AgentsPage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },

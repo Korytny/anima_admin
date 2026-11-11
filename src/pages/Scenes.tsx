@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
-import { Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
+import { AudioLines, Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
 import type { Scene } from '@/types'
-import { sceneCast, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { GENERATING, sceneCast, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
@@ -26,7 +26,7 @@ import {
 } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 import { LAST_TOPIC_KEY as LAST_KEY, TopicSelect } from '@/components/TopicSelect'
-import { pipelineConfigured } from '@/api/pipeline'
+import { audioConfigured, pipelineConfigured, videoConfigured } from '@/api/pipeline'
 
 
 export function ScenesPage() {
@@ -60,7 +60,8 @@ function NoTopic() {
 function TopicScenes({ topicId }: { topicId: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { topics, scenes: allScenes, characters: allCharacters, loading, createScene, deleteScenes, updateScenes, generateSceneImages } = useData()
+  const { topics, scenes: allScenes, characters: allCharacters, loading, createScene, deleteScenes, updateScenes, generateSceneImages, runJobs, isRunning } = useData()
+  const [videoNoLength, setVideoNoLength] = useState<string[] | null>(null)
   const all = useScenesByTopic().get(topicId) ?? []
   const topic = topics.find((t) => t.topic_id === topicId)
   const pool = useMemo(() => seasonCharacters(topic?.season_id, allCharacters), [topic?.season_id, allCharacters])
@@ -127,6 +128,29 @@ function TopicScenes({ topicId }: { topicId: string }) {
         enableSorting: false,
         meta: { label: 'Превью' },
         cell: ({ row }) => <Thumb src={scenePreview(row.original)} className="h-7 w-12" />,
+      },
+      {
+        id: 'ready',
+        header: 'Готово',
+        size: 76,
+        enableSorting: false,
+        meta: { label: 'Готово: кадр · аудио · видео' },
+        cell: ({ row }) => {
+          const s = row.original
+          const dot = (label: string, done: boolean, running: boolean) => (
+            <span
+              title={`${label}: ${running ? 'в работе' : done ? 'есть' : 'нет'}`}
+              className={`size-2 rounded-full ${running ? 'animate-pulse bg-gold' : done ? 'bg-success' : 'bg-border'}`}
+            />
+          )
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              {dot('Кадр', !!s.base_image_url, s.status === GENERATING)}
+              {dot('Аудио', !!s.audio_file, isRunning('audio', s.scene_id))}
+              {dot('Видео', !!s.video_file, isRunning('video', s.scene_id))}
+            </span>
+          )
+        },
       },
       {
         accessorKey: 'status',
@@ -215,7 +239,7 @@ function TopicScenes({ topicId }: { topicId: string }) {
     ],
     // open/setConfirm стабильны по смыслу
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pool],
+    [pool, isRunning],
   )
 
   if (!loading && !topic) {
@@ -342,6 +366,34 @@ function TopicScenes({ topicId }: { topicId: string }) {
                   <Sparkles /> Сгенерировать фото ({selectedIds.length})
                 </Button>
               )}
+              {selectedIds.length > 0 && (
+                <Button
+                  variant="outline"
+                  disabled={!audioConfigured}
+                  title={audioConfigured ? 'Озвучить выбранные шоты в n8n' : 'Не задан VITE_N8N_AUDIO_WEBHOOK'}
+                  onClick={() => {
+                    void runJobs('audio', selectedIds)
+                    setSelection({})
+                  }}
+                >
+                  <AudioLines /> Озвучить ({selectedIds.length})
+                </Button>
+              )}
+              {selectedIds.length > 0 && (
+                <Button
+                  variant="outline"
+                  disabled={!videoConfigured}
+                  title={videoConfigured ? 'Собрать видео выбранных шотов в n8n' : 'Не задан VITE_N8N_VIDEO_WEBHOOK'}
+                  onClick={() => {
+                    const ids = new Set(selectedIds)
+                    if (allScenes.some((s) => ids.has(s.scene_id) && !s.audio_file && !s.time)) return setVideoNoLength(selectedIds)
+                    void runJobs('video', selectedIds)
+                    setSelection({})
+                  }}
+                >
+                  <Film /> Видео ({selectedIds.length})
+                </Button>
+              )}
               <Button variant="danger" disabled={!selectedIds.length} onClick={() => setConfirm(selectedIds)}>
                 <Trash2 /> Удалить{selectedIds.length ? ` (${selectedIds.length})` : ''}
               </Button>
@@ -364,6 +416,18 @@ function TopicScenes({ topicId }: { topicId: string }) {
       </div>
 
       <SceneCard scene={active} siblings={all} onClose={() => open(null)} onDelete={(id) => setConfirm([id])} />
+
+      <ConfirmDialog
+        open={!!videoNoLength}
+        onOpenChange={(o) => !o && setVideoNoLength(null)}
+        title="Не у всех шотов задана длительность"
+        description={`Без озвучки и без времени шота: ${allScenes.filter((s) => videoNoLength?.includes(s.scene_id) && !s.audio_file && !s.time).length} из ${videoNoLength?.length ?? 0}. Видео строится по озвучке, а без неё — по полю «Сек».`}
+        confirmLabel="Всё равно запустить"
+        onConfirm={() => {
+          void runJobs('video', videoNoLength ?? [])
+          setSelection({})
+        }}
+      />
 
       <ConfirmDialog
         open={!!confirm}

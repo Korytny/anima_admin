@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/api'
-import { requestSceneImage } from '@/api/pipeline'
+import { requestLocationMusic, requestMontage, requestSceneAudio, requestSceneImage, requestSceneVideo } from '@/api/pipeline'
 import { NEW_SEASON_TITLE, NEW_TOPIC_TITLE } from '@/api/supabase'
 import { uniqueFolder } from '@/lib/media'
 import type { Agent, Character, Scene, Season, Topic } from '@/types'
@@ -11,6 +11,28 @@ import type { Agent, Character, Scene, Season, Topic } from '@/types'
 const REFRESH_MS = 20_000
 const REFRESH_ACTIVE_MS = 4_000
 export const GENERATING = 'generating'
+
+/** Запуски в n8n без статуса в БД: озвучка/видео шота, монтаж серии. Живут в памяти вкладки.
+ *  Готово — когда n8n изменил поля результата (или updated_at) строки; через JOB_TIMEOUT_MS снимаем с предупреждением. */
+export type JobKind = 'audio' | 'video' | 'montage' | 'music'
+export const JOB_LABEL: Record<JobKind, string> = { audio: 'Озвучка', video: 'Видео', montage: 'Монтаж', music: 'Музыка' }
+const JOB_TIMEOUT_MS = 20 * 60_000
+const JOB_REQUEST: Record<Exclude<JobKind, 'music'>, (id: string) => Promise<void>> = { audio: requestSceneAudio, video: requestSceneVideo, montage: requestMontage }
+interface Job {
+  since: number
+  sig: string
+}
+const jobKey = (kind: JobKind, id: string) => `${kind}:${id}`
+function jobSig(kind: JobKind, id: string, s: Pick<DataState, 'scenes' | 'topics'>): string | null {
+  if (kind === 'montage') {
+    const t = s.topics.find((x) => x.topic_id === id)
+    return t ? `${t.url_final}|${t.updated_at}` : null
+  }
+  const sc = s.scenes.find((x) => x.scene_id === id)
+  if (!sc) return null
+  if (kind === 'music') return `${sc.music_file}|${sc.updated_at}`
+  return kind === 'audio' ? `${sc.audio_file}|${sc.audio_duration}|${sc.updated_at}` : `${sc.video_file}|${sc.video_sub}|${sc.updated_at}`
+}
 
 interface DataState {
   loading: boolean
@@ -115,7 +137,28 @@ function useDataStore() {
     void load()
   }, [load])
 
-  const active = state.scenes.some((s) => s.status === GENERATING)
+  const [jobs, setJobs] = useState<Record<string, Job>>({})
+  // Снимаем запуски, по которым n8n записал результат (или истёк таймаут)
+  useEffect(() => {
+    const keys = Object.keys(jobs)
+    if (!keys.length) return
+    const next: Record<string, Job> = {}
+    let timedOut = 0
+    for (const k of keys) {
+      const [kind, id] = k.split(':') as [JobKind, string]
+      const sig = jobSig(kind, id, state)
+      if (sig === null || sig !== jobs[k].sig) continue
+      if (Date.now() - jobs[k].since > JOB_TIMEOUT_MS) {
+        timedOut++
+        continue
+      }
+      next[k] = jobs[k]
+    }
+    if (timedOut) toast.warning(`n8n не вернул результат за 20 мин: ${timedOut}`, { description: 'Проверьте выполнение в n8n' })
+    if (Object.keys(next).length !== keys.length) setJobs(next)
+  }, [state, jobs])
+
+  const active = state.scenes.some((s) => s.status === GENERATING) || Object.keys(jobs).length > 0
   useEffect(() => {
     const t = setInterval(() => !document.hidden && load(true), active ? REFRESH_ACTIVE_MS : REFRESH_MS)
     return () => clearInterval(t)
@@ -217,6 +260,45 @@ function useDataStore() {
         if (failed.length < ids.length) toast.success(`Генерация запущена: ${ids.length - failed.length}`)
       },
 
+      /** Озвучка/видео шотов (ids = scene_id) или монтаж серий (ids = topic_id) — вебхук n8n по каждому. */
+      async runJobs(kind: Exclude<JobKind, 'music'>, ids: string[]) {
+        if (!ids.length) return
+        const since = Date.now()
+        const added: Record<string, Job> = {}
+        for (const id of ids) added[jobKey(kind, id)] = { since, sig: jobSig(kind, id, stateRef.current) ?? '' }
+        setJobs((j) => ({ ...j, ...added }))
+        const results = await Promise.allSettled(ids.map((id) => JOB_REQUEST[kind](id)))
+        const failed = ids.filter((_, i) => results[i].status === 'rejected')
+        if (failed.length) {
+          const reason = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason
+          toast.error(`${JOB_LABEL[kind]}: не удалось запустить ${failed.length} из ${ids.length}`, { description: errMsg(reason) })
+          setJobs((j) => {
+            const next = { ...j }
+            for (const id of failed) delete next[jobKey(kind, id)]
+            return next
+          })
+        }
+        if (failed.length < ids.length) toast.success(`${JOB_LABEL[kind]}: запущено ${ids.length - failed.length}`)
+      },
+
+      /** Музыка локации: один вебхук на локацию; запуск отслеживается по первому шоту (n8n пишет music_file во все). */
+      async runMusic(topicId: string, locationNum: number | null, sceneIds: string[]) {
+        if (!sceneIds.length) return
+        const key = jobKey('music', sceneIds[0])
+        setJobs((j) => ({ ...j, [key]: { since: Date.now(), sig: jobSig('music', sceneIds[0], stateRef.current) ?? '' } }))
+        try {
+          await requestLocationMusic(topicId, locationNum, sceneIds)
+          toast.success('Музыка: генерация запущена')
+        } catch (e) {
+          toast.error('Музыка: не удалось запустить', { description: errMsg(e) })
+          setJobs((j) => {
+            const next = { ...j }
+            delete next[key]
+            return next
+          })
+        }
+      },
+
       // ----- персонажи (библиотека сезона)
       async createCharacter(seasonId: string) {
         const c = await run(api.createCharacter(seasonId), 'Персонаж добавлен')
@@ -270,7 +352,8 @@ function useDataStore() {
     [run, load, assignFolders, assignSeasonFolders],
   )
 
-  return { ...state, ...actions }
+  const isRunning = useCallback((kind: JobKind, id: string) => !!jobs[jobKey(kind, id)], [jobs])
+  return { ...state, ...actions, isRunning }
 }
 
 type DataCtx = ReturnType<typeof useDataStore>

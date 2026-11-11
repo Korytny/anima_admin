@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { AudioLines, Clapperboard, Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import type { Character, Scene, Season, Topic } from '@/types'
 import { useNavigate } from 'react-router-dom'
 import { GENERATING, characterImages, characterTitle, sceneCharacters, seasonCharacters, useData } from '@/store/data'
-import { pipelineConfigured } from '@/api/pipeline'
+import { audioConfigured, pipelineConfigured, videoConfigured } from '@/api/pipeline'
 import { absPath, mediaUrl, scenePath } from '@/lib/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
@@ -245,6 +245,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
           )}
           <PromptBlock scene={draft} cast={cast} />
           {scene.audio_file && <audio src={mediaUrl(scene.audio_file)} controls className="h-9 w-full" />}
+          <SceneJobs scene={scene} />
           {scene.dialogue_text && (
             <blockquote className="rounded-md border-l-2 border-accent bg-bg px-3 py-2 text-[13px] text-fg-2">
               «{scene.dialogue_text}»{scene.dialogue_direction && <span className="ml-1 text-fg-3">— {scene.dialogue_direction}</span>}
@@ -310,6 +311,54 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
         }}
       />
     </>
+  )
+}
+
+/** Озвучка и видео шота в n8n. Длительность видео — по аудио, без озвучки — по scenes.time; нет ни того ни другого — подтверждение. */
+function SceneJobs({ scene }: { scene: Scene }) {
+  const { runJobs, isRunning } = useData()
+  const [noLength, setNoLength] = useState(false)
+  const audioRunning = isRunning('audio', scene.scene_id)
+  const videoRunning = isRunning('video', scene.scene_id)
+  const runVideo = () => void runJobs('video', [scene.scene_id])
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={audioRunning || !audioConfigured}
+        title={audioConfigured ? 'Озвучить шот в n8n (audio_file)' : 'Не задан VITE_N8N_AUDIO_WEBHOOK'}
+        onClick={() => void runJobs('audio', [scene.scene_id])}
+      >
+        {audioRunning ? <Loader2 className="animate-spin" /> : <AudioLines />}
+        {audioRunning ? 'Озвучка…' : scene.audio_file ? 'Переозвучить' : 'Озвучить'}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={videoRunning || !videoConfigured}
+        title={videoConfigured ? 'Собрать видео шота в n8n (video_file)' : 'Не задан VITE_N8N_VIDEO_WEBHOOK'}
+        onClick={() => (scene.audio_file || scene.time ? runVideo() : setNoLength(true))}
+      >
+        {videoRunning ? <Loader2 className="animate-spin" /> : <Clapperboard />}
+        {videoRunning ? 'Видео…' : scene.video_file ? 'Пересобрать видео' : 'Видео'}
+      </Button>
+      {!scene.audio_file &&
+        (scene.time ? (
+          <span className="text-xs text-fg-3">без озвучки — видео по времени шота: {scene.time} с</span>
+        ) : (
+          <span className="text-xs text-gold">нет ни озвучки, ни времени шота</span>
+        ))}
+      {scene.audio_duration != null && <span className="ml-auto font-mono text-xs text-fg-3">аудио {scene.audio_duration} с</span>}
+      <ConfirmDialog
+        open={noLength}
+        onOpenChange={setNoLength}
+        title="Не задана длительность видео"
+        description="Видео строится по озвучке, а без неё — по времени шота (поле «Сек»). У этого шота нет ни того, ни другого."
+        confirmLabel="Всё равно запустить"
+        onConfirm={runVideo}
+      />
+    </div>
   )
 }
 

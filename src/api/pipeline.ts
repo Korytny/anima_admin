@@ -45,3 +45,30 @@ export async function requestEpisodeScript(topicId: string) {
   })
   if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
+
+// Озвучка, видео шота и монтаж серии: админка шлёт только id. n8n сам берёт данные из БД
+// и пишет результат в scenes.audio_file / audio_duration, scenes.video_file / video_sub, topics.url_final
+// (музыка по локации накладывается при монтаже).
+const AUDIO_WEBHOOK = import.meta.env.VITE_N8N_AUDIO_WEBHOOK as string | undefined
+const VIDEO_WEBHOOK = import.meta.env.VITE_N8N_VIDEO_WEBHOOK as string | undefined
+const MONTAGE_WEBHOOK = import.meta.env.VITE_N8N_MONTAGE_WEBHOOK as string | undefined
+
+export const audioConfigured = !!AUDIO_WEBHOOK
+export const videoConfigured = !!VIDEO_WEBHOOK
+export const montageConfigured = !!MONTAGE_WEBHOOK
+
+async function post(url: string | undefined, envName: string, body: Record<string, unknown>) {
+  if (!url) throw new Error(`Не задан ${envName} в .env.local`)
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}
+
+export const requestSceneAudio = (sceneId: string) => post(AUDIO_WEBHOOK, 'VITE_N8N_AUDIO_WEBHOOK', { action: 'scene_audio', scene_id: sceneId })
+export const requestSceneVideo = (sceneId: string) => post(VIDEO_WEBHOOK, 'VITE_N8N_VIDEO_WEBHOOK', { action: 'scene_video', scene_id: sceneId })
+export const requestMontage = (topicId: string) => post(MONTAGE_WEBHOOK, 'VITE_N8N_MONTAGE_WEBHOOK', { action: 'episode_montage', topic_id: topicId })
+
+// Музыка локации (Suno через n8n): шлём серию, номер локации и её шоты; n8n пишет scenes.music_file во все эти шоты.
+const MUSIC_WEBHOOK = import.meta.env.VITE_N8N_MUSIC_WEBHOOK as string | undefined
+export const musicConfigured = !!MUSIC_WEBHOOK
+export const requestLocationMusic = (topicId: string, locationNum: number | null, sceneIds: string[]) =>
+  post(MUSIC_WEBHOOK, 'VITE_N8N_MUSIC_WEBHOOK', { action: 'location_music', topic_id: topicId, location_num: locationNum, scene_ids: sceneIds })

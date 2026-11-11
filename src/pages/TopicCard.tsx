@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Copy, ExternalLink, Theater, Trash2 } from 'lucide-react'
+import { Copy, ExternalLink, Loader2, Scissors, Theater, Trash2 } from 'lucide-react'
 import type { Season, Topic } from '@/types'
 import { scenePreview, seasonTitle, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { copyText, fmtBytes, fmtDateTime, fmtDuration, timeAgo } from '@/lib/utils'
 import { mediaUrl } from '@/lib/media'
+import { montageConfigured } from '@/api/pipeline'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
@@ -96,7 +97,8 @@ export function TopicCard({ topic, onClose, onDelete }: { topic: Topic | null; o
 
 function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => void }) {
   const navigate = useNavigate()
-  const { updateTopic, seasons } = useData()
+  const { updateTopic, seasons, runJobs, isRunning } = useData()
+  const montaging = isRunning('montage', topic.topic_id)
   const scenes = useScenesByTopic().get(topic.topic_id) ?? []
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(topic, 'topic_id', (patch) => updateTopic(topic.topic_id, patch))
   const [tab, setTab] = useState<Tab>('details')
@@ -194,6 +196,14 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
           <>
             <Button onClick={() => navigate(`/scenes/${topic.topic_id}`)}>
               <Theater /> Открыть сцены
+            </Button>
+            <Button
+              disabled={montaging || !montageConfigured}
+              title={montageConfigured ? 'Смонтировать ролик в n8n (видео шотов + музыка → url_final)' : 'Не задан VITE_N8N_MONTAGE_WEBHOOK'}
+              onClick={() => void runJobs('montage', [topic.topic_id])}
+            >
+              {montaging ? <Loader2 className="animate-spin" /> : <Scissors />}
+              {montaging ? 'Монтаж…' : topic.url_final ? 'Перемонтировать' : 'Смонтировать'}
             </Button>
             <Button variant="ghost" size="icon" title="Скопировать ссылку" aria-label="Скопировать ссылку" onClick={() => copyText(location.href)}>
               <Copy />
