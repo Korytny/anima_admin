@@ -7,7 +7,7 @@ export type Json = string | number | boolean | null | { [k: string]: Json } | Js
 export interface Topic {
   topic_id: string // uuid, PK
   title: string // NOT NULL
-  extended_description: string | null
+  extended_description: string | null // сейчас не используется, в админке не показывается
   status: string | null // фактически: draft | pending | published (+ мусорные значения)
   url: string | null
   visual_style: string | null
@@ -22,8 +22,26 @@ export interface Topic {
   all_eng: Json | null
   music: string | null
   chars: string[] | null
-  script_scenas: string | null
+  script_scenas: string | null // сценарий серии от сценариста (=== ЛОКАЦИЯ / @Scene …) — читает раздел «Сценарий»
+  script_shots: string | null // шоты серии (вывод Редактора) — показывается в карточке ролика
   folder: string | null // папка на диске (anima/<folder>/…), назначает админка один раз (store: assignFolders)
+  season_id: string | null // uuid → seasons.id; номер серии = backlog
+  logline: string | null
+  beats: string[] | null // биты серии
+  source_excerpt: string | null // выжимка первоисточника
+}
+
+/** public.seasons — сезон (арка из нескольких серий) */
+export interface Season {
+  id: string // uuid
+  created_at: string | null
+  title: string // NOT NULL
+  status: string | null
+  logline: string | null
+  theme: string | null // сквозной вопрос
+  bible: string | null // markdown: тон, правила диалогов, визуальный стиль
+  source: string | null // первоисточник и версия канона
+  folder: string | null // папка на диске (anima/<folder>/characters), назначает админка один раз
 }
 
 /** public.scenes — сцена (шот) ролика */
@@ -69,11 +87,11 @@ export interface Scene {
   video_sub: string | null
 }
 
-/** public.characters — персонаж ролика. Связь со сценой — по имени (scenes.character[] / speaking_character). */
+/** public.characters — персонаж сезона (библиотека). Серия выбирает его в topics.chars, сцена — по имени (scenes.character[] / speaking_character). */
 export interface Character {
   id: string // uuid, PK
   created_at: string | null
-  topic: string | null // uuid → topics.topic_id
+  season: string | null // uuid → seasons.id (в старых записях — id ролика)
   name: string | null
   role_key: string | null
   number: number | null
@@ -94,24 +112,21 @@ export interface Character {
   stability: number | null
 }
 
+/** public.agents — агент пайплайна (промпт + модель). id — bigint. */
+export interface Agent {
+  id: number
+  created_at: string | null
+  name: string | null
+  description: string | null
+  prompt: string | null // системный промпт, markdown
+  model: string | null
+  is_active: boolean | null
+}
+
 // ---- Ниже — сущности без таблиц в БД (пока демо, in-memory)
 
 export type LlmProvider = 'openai' | 'anthropic' | 'google' | 'openrouter'
 
-export interface Agent {
-  id: string
-  name: string
-  role: string
-  description: string
-  provider: LlmProvider
-  model: string
-  temperature: number
-  max_tokens: number
-  system_prompt: string
-  related_fields: string[]
-  enabled: boolean
-  updated_at: string
-}
 
 export type UserRole = 'admin' | 'editor' | 'viewer'
 

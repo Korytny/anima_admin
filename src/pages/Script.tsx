@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, FileText, MapPin, ScrollText } from 'lucide-react'
 import type { Scene } from '@/types'
-import { useData, useScenesByTopic } from '@/store/data'
+import { seasonCharacters, useData, useScenesByTopic } from '@/store/data'
 import { parseScript, type ScriptScene } from '@/lib/script'
 import { cn, storageGet } from '@/lib/utils'
 import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
@@ -21,6 +21,9 @@ export function ScriptPage() {
 
 const norm = (s: string) => s.trim().toLowerCase()
 
+/** Блоки агента перед ===STORY===. */
+const NOTE_LABELS: Record<string, string> = { CONFLICT: 'Конфликт', PARADOX: 'Парадокс', TWIST: 'Твист', TRANSFORMATION: 'Трансформация', ANCHOR: 'Якорь' }
+
 function TopicScript({ topicId }: { topicId: string }) {
   const navigate = useNavigate()
   const { topics, characters, loading, updateTopic } = useData()
@@ -34,9 +37,9 @@ function TopicScript({ topicId }: { topicId: string }) {
     localStorage.setItem(LAST_TOPIC_KEY, JSON.stringify(topicId))
   }, [topicId])
 
-  const source = draft ?? topic?.extended_description ?? ''
+  const source = draft ?? topic?.script_scenas ?? ''
   const parsed = useMemo(() => parseScript(source), [source])
-  const known = useMemo(() => new Set(characters.filter((c) => c.topic === topicId).map((c) => norm(c.name ?? ''))), [characters, topicId])
+  const known = useMemo(() => new Set(seasonCharacters(topic?.season_id, characters).map((c) => norm(c.name ?? ''))), [characters, topic?.season_id])
 
   // шоты в БД по номеру сцены
   const shotsByNum = useMemo(() => {
@@ -45,12 +48,12 @@ function TopicScript({ topicId }: { topicId: string }) {
     return m
   }, [dbScenes])
   const covered = parsed.scenes.filter((s) => s.num != null && shotsByNum.has(s.num)).length
-  const dirty = draft != null && draft !== (topic?.extended_description ?? '')
+  const dirty = draft != null && draft !== (topic?.script_scenas ?? '')
 
   const save = async () => {
     if (!dirty) return
     setSaving(true)
-    const t = await updateTopic(topicId, { extended_description: draft || null })
+    const t = await updateTopic(topicId, { script_scenas: draft || null })
     setSaving(false)
     if (t) setDraft(null)
   }
@@ -84,11 +87,21 @@ function TopicScript({ topicId }: { topicId: string }) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {parsed.notes.length > 0 && (
+            <div className="grid gap-2 border-b border-border p-3 sm:grid-cols-2 xl:grid-cols-3">
+              {parsed.notes.map((n, i) => (
+                <div key={i} className="rounded-lg border border-border bg-surface p-3">
+                  <div className="mb-1 text-[11px] font-semibold tracking-wide text-accent-hover uppercase">{NOTE_LABELS[n.tag] ?? n.tag}</div>
+                  <p className="text-[13px] leading-relaxed whitespace-pre-line text-fg-2">{n.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
           {!parsed.scenes.length ? (
             <EmptyState
               icon={<ScrollText />}
               title={source.trim() ? 'Не удалось разобрать сценарий' : 'Сценария пока нет'}
-              description={source.trim() ? 'Ожидается формат «=== ЛОКАЦИЯ: … ===», «@Scene: N — …», «Описание: …». Откройте исходник.' : 'Поле extended_description у ролика пустое.'}
+              description={source.trim() ? 'Ожидается формат «=== ЛОКАЦИЯ: … ===», «@Scene: N — …», «Описание: …». Откройте исходник.' : 'Поле script_scenas у ролика пустое.'}
             />
           ) : (
             <table className="w-full border-collapse text-[13px]">
@@ -121,7 +134,7 @@ function TopicScript({ topicId }: { topicId: string }) {
         </div>
       </div>
 
-      <SidePanel open={sourceOpen} onClose={() => setSourceOpen(false)} panelKey="source" header={<h2 className="text-base font-semibold">extended_description</h2>}>
+      <SidePanel open={sourceOpen} onClose={() => setSourceOpen(false)} panelKey="source" header={<h2 className="text-base font-semibold">script_scenas</h2>}>
         <PanelScroll>
           <div className="p-4">
             <Textarea
@@ -165,7 +178,7 @@ function Row({ scene, known, shots, onOpenShots }: { scene: ScriptScene; known: 
           {scene.characters.map((c) => (
             <span
               key={c}
-              title={known.has(norm(c)) ? undefined : 'Нет в таблице characters этого ролика'}
+              title={known.has(norm(c)) ? undefined : 'Нет в библиотеке персонажей сезона'}
               className={cn('rounded px-1.5 py-0.5 text-xs', known.has(norm(c)) ? 'bg-raised text-fg' : 'border border-dashed border-border text-fg-3')}
             >
               {c}
@@ -197,12 +210,19 @@ function Row({ scene, known, shots, onOpenShots }: { scene: ScriptScene; known: 
   )
 }
 
-/** Описание с выделенными репликами «X говорит: «…»». */
+/** Описание с выделенными репликами «X говорит: «…»» и пометками [реплика: …]. */
 function Description({ text }: { text: string }) {
-  const parts = text.split(/([А-ЯЁA-Z][^.!?«»:]*?\s+говорит\s*:\s*«[^»]*»)/g)
+  const parts = text.split(/([А-ЯЁA-Z][^.!?«»:]*?\s+говорит\s*:\s*«[^»]*»|\[реплика:[^\]]*\])/gi)
   return (
     <p className="leading-relaxed whitespace-pre-line text-fg-2">
       {parts.map((p, i) => {
+        const cue = p.match(/^\[реплика:\s*([^\]]*)\]$/i)
+        if (cue)
+          return (
+            <span key={i} className="mx-0.5 inline rounded border border-dashed border-accent/50 px-1 py-0.5 text-xs text-fg-2" title="Пометка для агента «Диалоги»">
+              💬 {cue[1]}
+            </span>
+          )
         const m = p.match(/^(.*?)\s+говорит\s*:\s*«([^»]*)»$/)
         if (!m) return <Fragment key={i}>{p}</Fragment>
         return (

@@ -29,3 +29,19 @@ export async function requestSceneImage(scene: Scene, topic: Topic | undefined, 
   })
   if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
+
+// Сценарий серии: админка шлёт только topic_id. Всё остальное (сезон, библия, биты, первоисточник, персонажи,
+// промпт агента) n8n сам берёт из БД и пишет ответ в topics.script_scenas.
+const SCRIPT_WEBHOOK = import.meta.env.VITE_N8N_SCRIPT_WEBHOOK as string | undefined
+
+export const scriptPipelineConfigured = !!SCRIPT_WEBHOOK
+
+export async function requestEpisodeScript(topicId: string) {
+  if (!SCRIPT_WEBHOOK) throw new Error('Не задан VITE_N8N_SCRIPT_WEBHOOK в .env.local')
+  const res = await fetch(SCRIPT_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'episode_script', topic_id: topicId }),
+  })
+  if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}

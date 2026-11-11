@@ -1,6 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import type { Character, Scene, Topic } from '@/types'
+import type { Agent, Season, Character, Scene, Topic } from '@/types'
 
 const PAGE = 1000
 
@@ -22,6 +22,7 @@ async function selectAll<T>(table: string, orderBy: string): Promise<T[]> {
 const now = () => new Date().toISOString()
 
 export const NEW_TOPIC_TITLE = 'Новый ролик'
+export const NEW_SEASON_TITLE = 'Новый сезон'
 
 export const supabaseData = {
   listTopics: () => selectAll<Topic>('topics', 'updated_at'),
@@ -42,6 +43,28 @@ export const supabaseData = {
     // FK может быть без ON DELETE CASCADE — сначала сцены
     check(await supabase.from('scenes').delete().in('topic', ids))
     check(await supabase.from('topics').delete().in('topic_id', ids))
+  },
+
+  // seasons: пока supabase/seasons.sql не выполнен, таблицы нет — не роняем всю загрузку
+  async listSeasons() {
+    try {
+      return await selectAll<Season>('seasons', 'created_at')
+    } catch (e) {
+      console.warn('[seasons] таблица недоступна — выполните supabase/seasons.sql', e)
+      return []
+    }
+  },
+
+  async createSeason(data: Partial<Season> = {}) {
+    return check(await supabase.from('seasons').insert({ title: NEW_SEASON_TITLE, ...data }).select().single()) as Season
+  },
+
+  async updateSeason(id: string, patch: Partial<Season>) {
+    return check(await supabase.from('seasons').update(patch).eq('id', id).select().single()) as Season
+  },
+
+  async deleteSeasons(ids: string[]) {
+    check(await supabase.from('seasons').delete().in('id', ids))
   },
 
   listScenes: () => selectAll<Scene>('scenes', 'updated_at'),
@@ -69,8 +92,8 @@ export const supabaseData = {
   // characters: updated_at нет — порядок по created_at
   listCharacters: () => selectAll<Character>('characters', 'created_at'),
 
-  async createCharacter(topicId: string, data: Partial<Character> = {}) {
-    return check(await supabase.from('characters').insert({ topic: topicId, name: 'Новый персонаж', ...data }).select().single()) as Character
+  async createCharacter(seasonId: string, data: Partial<Character> = {}) {
+    return check(await supabase.from('characters').insert({ season: seasonId, name: 'Новый персонаж', ...data }).select().single()) as Character
   },
 
   async updateCharacter(id: string, patch: Partial<Character>) {
@@ -79,5 +102,20 @@ export const supabaseData = {
 
   async deleteCharacters(ids: string[]) {
     check(await supabase.from('characters').delete().in('id', ids))
+  },
+
+  // agents: id bigint, updated_at нет
+  listAgents: () => selectAll<Agent>('agents', 'id'),
+
+  async createAgent(data: Partial<Agent> = {}) {
+    return check(await supabase.from('agents').insert({ name: 'Новый агент', is_active: false, ...data }).select().single()) as Agent
+  },
+
+  async updateAgent(id: number, patch: Partial<Agent>) {
+    return check(await supabase.from('agents').update(patch).eq('id', id).select().single()) as Agent
+  },
+
+  async deleteAgents(ids: number[]) {
+    check(await supabase.from('agents').delete().in('id', ids))
   },
 }

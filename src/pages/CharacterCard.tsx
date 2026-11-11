@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Copy, Trash2 } from 'lucide-react'
-import type { Character, Topic } from '@/types'
+import type { Character, Season } from '@/types'
 import { characterImages, characterTitle, useData } from '@/store/data'
 import { useDraft } from '@/lib/useDraft'
 import { copyText, fmtDateTime } from '@/lib/utils'
@@ -10,7 +10,7 @@ import { Button, Kbd, Thumb } from '@/components/ui'
 import { PathHint } from '@/components/PathHint'
 import { characterPath } from '@/lib/media'
 
-function groups(c: Character, topic: Topic | undefined): GroupDef<Character>[] {
+function groups(c: Character, season: Season | undefined): GroupDef<Character>[] {
   return [
   {
     title: 'Основное',
@@ -27,7 +27,7 @@ function groups(c: Character, topic: Topic | undefined): GroupDef<Character>[] {
     fields: [
       { key: 'text_prompt', type: 'textarea', rows: 5, mono: true },
       { key: 'full_body_prompt', type: 'textarea', rows: 4, mono: true },
-      { key: 'base_img', type: 'url', mono: true, extra: (v, set) => <PathHint expected={characterPath(c, topic)} value={v} onChange={set} /> },
+      { key: 'base_img', type: 'url', mono: true, extra: (v, set) => <PathHint expected={characterPath(c, season)} value={v} onChange={set} /> },
       { key: 'pers_file', type: 'url', mono: true },
       { key: 'filename', mono: true },
       { key: 'template', mono: true },
@@ -50,7 +50,7 @@ function groups(c: Character, topic: Topic | undefined): GroupDef<Character>[] {
     defaultOpen: false,
     fields: [
       { key: 'id', type: 'readonly' },
-      { key: 'topic', type: 'readonly' },
+      { key: 'season', type: 'readonly' },
       { key: 'character_set_id', mono: true },
       { key: 'created_at', type: 'readonly', render: (v) => fmtDateTime(v as string) },
     ],
@@ -72,8 +72,8 @@ export function CharacterCard({ character, onClose, onDelete }: { character: Cha
 }
 
 function Body({ character, onDelete }: { character: Character; onDelete: (id: string) => void }) {
-  const { updateCharacter, topics } = useData()
-  const topic = topics.find((t) => t.topic_id === character.topic)
+  const { updateCharacter, seasons } = useData()
+  const season = seasons.find((x) => x.id === character.season)
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(character, 'id', (patch) => updateCharacter(character.id, patch))
   const [img, setImg] = useState(0)
   if (!draft) return null
@@ -94,7 +94,7 @@ function Body({ character, onDelete }: { character: Character; onDelete: (id: st
             </div>
           )}
         </div>
-        <FieldGroups groups={groups(draft, topic)} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
+        <FieldGroups groups={groups(draft, season)} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
       </PanelScroll>
 
       <PanelFooter>

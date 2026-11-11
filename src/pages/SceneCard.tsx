@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import type { Character, Scene, Topic } from '@/types'
 import { useNavigate } from 'react-router-dom'
-import { GENERATING, characterImages, characterTitle, sceneCharacters, useData } from '@/store/data'
+import { GENERATING, characterImages, characterTitle, sceneCharacters, seasonCharacters, useData } from '@/store/data'
 import { pipelineConfigured } from '@/api/pipeline'
 import { absPath, mediaUrl, scenePath } from '@/lib/media'
 import { PathHint } from '@/components/PathHint'
@@ -144,7 +144,8 @@ export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene
 function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; onDelete: (id: string) => void }) {
   const { updateScene, updateScenes, generateSceneImages, topics, characters } = useData()
   const navigate = useNavigate()
-  const cast = useMemo(() => sceneCharacters(scene, characters), [scene, characters])
+  const seasonId = topics.find((t) => t.topic_id === scene.topic)?.season_id
+  const cast = useMemo(() => sceneCharacters(scene, seasonCharacters(seasonId, characters)), [scene, characters, seasonId])
   const missing = useMemo(() => {
     const found = new Set(cast.map((c) => (c.name ?? '').trim().toLowerCase()))
     return [...new Set([...(scene.character ?? []), scene.speaking_character].filter((n): n is string => !!n?.trim()))].filter((n) => !found.has(n.trim().toLowerCase()))
@@ -223,7 +224,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
               {cast.map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => navigate(`/characters/${c.topic}?character=${c.id}`)}
+                  onClick={() => navigate(`/characters/${c.season}?character=${c.id}`)}
                   title={characterImages(c)[0] ?? 'Нет файла персонажа'}
                   className="flex items-center gap-1.5 rounded-md border border-border bg-raised py-1 pr-2 pl-1 text-xs hover:bg-hover"
                 >

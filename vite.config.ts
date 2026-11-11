@@ -23,6 +23,10 @@ function mediaDir(dir: string | undefined): Plugin {
         server.config.logger.warn('[media] MEDIA_DIR не задан в .env.local — /media/* отдаваться не будет')
         return
       }
+      if (/^[a-z]:[\\/]/i.test(dir) && process.platform !== 'win32') {
+        server.config.logger.error(`[media] MEDIA_DIR=${dir} — это путь Windows, а dev-сервер запущен на ${process.platform}. Этот диск отсюда не виден — запускайте админку на машине с ComfyUI.`)
+        return
+      }
       const root = resolve(dir)
       server.config.logger.info(`[media] /media/* → ${root} (папка ${existsSync(root) ? 'есть' : 'НЕ НАЙДЕНА'})`)
       const miss = (res: ServerResponse, url: string, file: string, why: string) => {

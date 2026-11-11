@@ -13,6 +13,7 @@ import { CharactersPage } from '@/pages/Characters'
 import { StoryboardPage } from '@/pages/Storyboard'
 import { ScriptPage } from '@/pages/Script'
 import { AgentsPage } from '@/pages/Agents'
+import { SeasonsPage } from '@/pages/Seasons'
 import { SettingsPage } from '@/pages/Settings'
 
 const router = createBrowserRouter([
@@ -21,11 +22,12 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/topics" replace /> },
       { path: 'dashboard', element: <DashboardPage /> },
+      { path: 'seasons/:seasonId?', element: <SeasonsPage /> },
       { path: 'topics/:topicId?', element: <ContentPlanPage /> },
       { path: 'scenes/:topicId?', element: <ScenesPage /> },
       { path: 'script/:topicId?', element: <ScriptPage /> },
       { path: 'storyboard/:topicId?', element: <StoryboardPage /> },
-      { path: 'characters/:topicId?', element: <CharactersPage /> },
+      { path: 'characters/:seasonId?', element: <CharactersPage /> },
       { path: 'agents', element: <AgentsPage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/topics" replace /> },

@@ -68,7 +68,7 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
         </Command.Group>
         <Command.Group heading="Агенты" className={groupCls}>
           {agents.map((a) => (
-            <Command.Item key={a.id} value={`agent ${a.name} ${a.role}`} className={itemCls} onSelect={() => go(`/agents?agent=${a.id}`)}>
+            <Command.Item key={a.id} value={`agent ${a.name ?? ''} ${a.description ?? ''} ${a.id}`} className={itemCls} onSelect={() => go(`/agents?agent=${a.id}`)}>
               <Bot /> {a.name}
               <span className="ml-auto text-xs text-fg-3">{a.model}</span>
             </Command.Item>

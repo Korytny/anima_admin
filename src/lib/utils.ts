@@ -73,9 +73,23 @@ export function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
   URL.revokeObjectURL(a.href)
 }
 
+/** По http (не localhost) navigator.clipboard недоступен — копируем через скрытый textarea. */
+function legacyCopy(text: string) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.setAttribute('readonly', '')
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0'
+  document.body.appendChild(ta)
+  ta.select()
+  const ok = document.execCommand('copy')
+  ta.remove()
+  if (!ok) throw new Error('execCommand copy failed')
+}
+
 export async function copyText(text: string) {
   try {
-    await navigator.clipboard.writeText(text)
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text)
+    else legacyCopy(text)
     toast.success('Скопировано', { description: text.length > 60 ? text.slice(0, 60) + '…' : text })
   } catch {
     toast.error('Не удалось скопировать')

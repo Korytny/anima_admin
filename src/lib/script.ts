@@ -1,4 +1,4 @@
-// Парсер сценария из topics.extended_description (промежуточный результат агента-сценариста).
+// Парсер сценария из topics.script_scenas (результат агента-сценариста).
 // Формат:
 //   === ЛОКАЦИЯ: <название> ===
 //   @Scene: <N> — <бит>
@@ -22,7 +22,15 @@ export interface ScriptScene {
   extra: Record<string, string>
 }
 
+/** Блок агента перед ===STORY===: [CONFLICT] …, [PARADOX] …, [TWIST] … (или [TAG] … [/TAG]). */
+export interface ScriptNote {
+  tag: string
+  text: string
+}
+
 export interface ParsedScript {
+  /** Блоки перед ===STORY=== (как агент понял серию). */
+  notes: ScriptNote[]
   scenes: ScriptScene[]
   locations: string[]
   /** Строки, которые не удалось отнести ни к одной сцене. */
@@ -34,6 +42,8 @@ const RE_SCENE = /^@Scene\s*:\s*(\d+)?\s*(?:[—–-]\s*(.*))?$/i
 const RE_TAG = /^@([\w-]+)\s*:\s*(.*)$/
 const RE_DESC = /^Описание\s*:\s*(.*)$/i
 const RE_SEP = /^[—–-]{2,}\s*$/
+const RE_STORY = /^=+\s*STORY\s*=+\s*$/im
+const RE_END = /^=+\s*(END|КОНЕЦ)\s*=+\s*$/im
 const RE_LINE = /([А-ЯЁA-Z][^.!?«»:]*?)\s+говорит\s*:\s*«([^»]*)»/g
 
 export function parseLines(text: string): ScriptLine[] {
@@ -58,7 +68,15 @@ export function parseScript(src: string | null | undefined): ParsedScript {
     inDesc = false
   }
 
-  for (const raw of (src ?? '').split(/\r?\n/)) {
+  // Ответ агента: берём только то, что между ===STORY=== и ===END=== (преамбулу и хвост модели игнорируем)
+  let text = src ?? ''
+  const start = text.search(RE_STORY)
+  const notes = start >= 0 ? parseNotes(text.slice(0, start)) : []
+  if (start >= 0) text = text.slice(start).replace(RE_STORY, '')
+  const end = text.search(RE_END)
+  if (end >= 0) text = text.slice(0, end)
+
+  for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim()
     if (!line) {
       if (inDesc && cur) cur.description += '\n'
@@ -94,5 +112,17 @@ export function parseScript(src: string | null | undefined): ParsedScript {
     }
   }
   close()
-  return { scenes, locations, warnings }
+  return { notes, scenes, locations, warnings }
+}
+
+/** [TAG] текст (может продолжаться на следующих строках, закрывающий [/TAG] необязателен). */
+function parseNotes(pre: string): ScriptNote[] {
+  const notes: ScriptNote[] = []
+  for (const raw of pre.split(/\r?\n/)) {
+    const line = raw.replace(/\[\/[^\]]+\]/g, '').trim()
+    const m = line.match(/^\[([A-ZА-ЯЁ_ ]+)\]\s*(.*)$/)
+    if (m) notes.push({ tag: m[1].trim(), text: m[2] })
+    else if (line && notes.length) notes[notes.length - 1].text += (notes[notes.length - 1].text ? '\n' : '') + line
+  }
+  return notes.map((n) => ({ ...n, text: n.text.trim() })).filter((n) => n.text)
 }

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { Clapperboard, Download, Eye, Film, Music, Plus, Search, Theater, Trash2, X } from 'lucide-react'
 import type { Topic } from '@/types'
-import { shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { ALL_SEASONS, NO_SEASON, SEASON_KEY, seasonEpisodes, seasonTitle, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { copyText, downloadCsv, fmtBytes, fmtDateTime, fmtDuration, timeAgo, useHotkey, usePersistentState } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
@@ -35,9 +35,13 @@ const NO_STATUS = '__none__'
 export function ContentPlanPage() {
   const { topicId } = useParams()
   const navigate = useNavigate()
-  const { topics, loading, error, createTopic, deleteTopics, updateTopics } = useData()
+  const { topics, seasons, loading, error, createTopic, deleteTopics, updateTopics } = useData()
   const byTopic = useScenesByTopic()
   const [filters, setFilters] = usePersistentState<Filters>('topics:filters', NO_FILTERS)
+  const [seasonPick, setSeasonPick] = usePersistentState<string | null>(SEASON_KEY, null)
+  // не выбран или удалён → первый сезон; сезонов нет → все
+  const season =
+    seasonPick === ALL_SEASONS || seasonPick === NO_SEASON || seasons.some((s) => s.id === seasonPick) ? seasonPick! : (seasons[0]?.id ?? ALL_SEASONS)
   const [selection, setSelection] = useState<RowSelectionState>({})
   const [confirm, setConfirm] = useState<string[] | null>(null)
 
@@ -53,21 +57,25 @@ export function ContentPlanPage() {
   const filtered = useMemo(() => {
     const q = filters.q.trim().toLowerCase()
     return topics.filter((t) => {
+      if (season === NO_SEASON ? t.season_id : season !== ALL_SEASONS && t.season_id !== season) return false
       if (filters.status.length && !filters.status.includes(t.status || NO_STATUS)) return false
       if (filters.video === 'yes' && !t.url_final) return false
       if (filters.video === 'no' && t.url_final) return false
       if (q) {
-        const hay = [t.topic_id, t.title, t.extended_description, t.music, t.visual_style, ...(t.chars ?? [])].join(' ').toLowerCase()
+        const hay = [t.topic_id, t.title, t.logline, t.script_scenas, t.script_shots, t.music, t.visual_style, ...(t.chars ?? [])].join(' ').toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
     })
-  }, [topics, filters])
+  }, [topics, filters, season])
 
   const selectedIds = Object.keys(selection)
 
   const create = async () => {
-    const t = await createTopic()
+    // новый ролик — в выбранный сезон, следующим номером
+    const inSeason = season !== ALL_SEASONS && season !== NO_SEASON
+    const n = inSeason ? Math.max(0, ...seasonEpisodes(season, topics).map((x) => x.backlog ?? 0)) + 1 : undefined
+    const t = await createTopic(inSeason ? { season_id: season, backlog: n } : undefined)
     if (t) navigate(`/topics/${t.topic_id}`)
   }
   useHotkey('n', (e) => {
@@ -110,7 +118,7 @@ export function ContentPlanPage() {
         size: 280,
         meta: { label: 'Название' },
         cell: ({ row }) => (
-          <span className="font-medium" title={row.original.extended_description ?? undefined}>
+          <span className="font-medium" title={row.original.logline ?? undefined}>
             {topicTitle(row.original)}
           </span>
         ),
@@ -174,6 +182,24 @@ export function ContentPlanPage() {
           </span>
         ),
       },
+      {
+        id: 'season',
+        header: 'Сезон',
+        size: 170,
+        meta: { label: 'Сезон / серия' },
+        accessorFn: (t) => {
+          const s = seasons.find((x) => x.id === t.season_id)
+          return s ? `${seasonTitle(s)} · ${String(t.backlog ?? '—').padStart(2, '0')}` : ''
+        },
+        cell: ({ getValue, row }) =>
+          getValue() ? (
+            <Link to={`/seasons/${row.original.season_id}?ep=${row.original.topic_id}`} onClick={(e) => e.stopPropagation()} className="truncate text-fg-2 hover:text-accent-hover">
+              {getValue()}
+            </Link>
+          ) : (
+            <span className="text-fg-3">—</span>
+          ),
+      },
       { accessorKey: 'visual_style', header: 'Стиль', size: 180, meta: { label: 'Визуальный стиль' }, cell: ({ getValue }) => <span className="text-fg-2">{getValue() ?? '—'}</span> },
       { accessorKey: 'backlog', header: 'Backlog', size: 84, meta: { label: 'Backlog' }, cell: ({ getValue }) => <span className="font-mono text-xs">{getValue() ?? '—'}</span> },
       { accessorKey: 'size', header: 'Размер', size: 90, meta: { label: 'Размер файла' }, cell: ({ getValue }) => <span className="font-mono text-xs text-fg-2">{fmtBytes(getValue())}</span> },
@@ -209,7 +235,7 @@ export function ContentPlanPage() {
         ),
       },
     ],
-    [byTopic, navigate],
+    [byTopic, navigate, seasons],
   )
 
   const exportCsv = () =>
@@ -245,6 +271,17 @@ export function ContentPlanPage() {
           loading={loading}
           toolbar={
             <>
+              <Select
+                className="w-48"
+                value={season}
+                onChange={(e) => setSeasonPick(e.target.value)}
+                aria-label="Сезон"
+                options={[
+                  ...seasons.map((s) => ({ value: s.id, label: seasonTitle(s) })),
+                  { value: NO_SEASON, label: 'Без сезона' },
+                  { value: ALL_SEASONS, label: 'Все ролики' },
+                ]}
+              />
               <Button variant="primary" onClick={create} title="Новая запись (N)">
                 <Plus /> Новая запись
               </Button>

@@ -1,8 +1,8 @@
-import type { Agent, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
+import type { Agent, Season, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
 
 /**
  * Контракт слоя данных. UI работает только через него.
- * topics/scenes — Supabase (src/api/supabase.ts); остальное — демо in-memory (src/api/demo.ts),
+ * topics/scenes/characters/agents — Supabase (src/api/supabase.ts); остальное — демо in-memory (src/api/demo.ts),
  * пока под это нет таблиц.
  */
 export interface Api {
@@ -12,6 +12,11 @@ export interface Api {
   updateTopics(ids: string[], patch: Partial<Topic>): Promise<Topic[]>
   deleteTopics(ids: string[]): Promise<void>
 
+  listSeasons(): Promise<Season[]>
+  createSeason(data?: Partial<Season>): Promise<Season>
+  updateSeason(id: string, patch: Partial<Season>): Promise<Season>
+  deleteSeasons(ids: string[]): Promise<void>
+
   listScenes(): Promise<Scene[]>
   createScene(topicId: string, data?: Partial<Scene>): Promise<Scene>
   updateScene(id: string, patch: Partial<Scene>): Promise<Scene>
@@ -19,14 +24,14 @@ export interface Api {
   deleteScenes(ids: string[]): Promise<void>
 
   listCharacters(): Promise<Character[]>
-  createCharacter(topicId: string, data?: Partial<Character>): Promise<Character>
+  createCharacter(seasonId: string, data?: Partial<Character>): Promise<Character>
   updateCharacter(id: string, patch: Partial<Character>): Promise<Character>
   deleteCharacters(ids: string[]): Promise<void>
 
   listAgents(): Promise<Agent[]>
   createAgent(data?: Partial<Agent>): Promise<Agent>
-  updateAgent(id: string, patch: Partial<Agent>): Promise<Agent>
-  deleteAgents(ids: string[]): Promise<void>
+  updateAgent(id: number, patch: Partial<Agent>): Promise<Agent>
+  deleteAgents(ids: number[]): Promise<void>
 
   listUsers(): Promise<User[]>
   inviteUser(email: string, role: User['role']): Promise<User>

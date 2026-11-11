@@ -23,6 +23,8 @@ export interface GroupDef<T> {
   title: string
   fields: FieldDef<T>[]
   defaultOpen?: boolean
+  /** Без заголовка и сворачивания — просто поля. */
+  flat?: boolean
 }
 
 /** Сгруппированный редактор полей сущности: label | input. */
@@ -59,6 +61,14 @@ function Group<T extends object>({
 }) {
   const [open, setOpen] = useState(group.defaultOpen ?? true)
   const dirtyCount = dirtyKeys ? group.fields.filter((f) => dirtyKeys.has(f.key)).length : 0
+  if (group.flat)
+    return (
+      <section className="grid grid-cols-[minmax(96px,34%)_1fr] gap-x-3 gap-y-2 px-4 py-3">
+        {group.fields.map((f) => (
+          <FieldRow key={f.key} field={f} value={draft[f.key]} onChange={(v) => onChange(f.key, v)} dirty={dirtyKeys?.has(f.key)} />
+        ))}
+      </section>
+    )
   return (
     <section>
       <button

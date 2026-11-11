@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronRight, LogOut, Plus, RefreshCw, Search, Settings, Zap } from 'lucide-react'
-import { topicTitle, useData } from '@/store/data'
+import { seasonTitle, topicTitle, useData } from '@/store/data'
 import { cn } from '@/lib/utils'
 import { signOut, useSession } from '../AuthGate'
 import { Avatar, Button, DropdownContent, DropdownItem, DropdownLabel, DropdownMenu, DropdownSeparator, DropdownTrigger, Kbd } from '../ui'
@@ -9,14 +9,15 @@ import { NAV } from './Sidebar'
 
 function useBreadcrumbs() {
   const { pathname } = useLocation()
-  const { topics } = useData()
+  const { topics, seasons } = useData()
   const [, section, id] = pathname.split('/')
   const nav = NAV.find((n) => n.to === `/${section}`)
   const crumbs: { label: string; to?: string }[] = [{ label: nav?.label ?? 'Pipeline Manager', to: nav?.to }]
-  if (id && ['topics', 'script', 'scenes', 'storyboard', 'characters'].includes(section)) {
+  if (id && ['topics', 'script', 'scenes', 'storyboard'].includes(section)) {
     const t = topics.find((x) => x.topic_id === id)
     crumbs.push({ label: topicTitle(t ?? { title: '', topic_id: id }), to: `/topics/${id}` })
   }
+  if ((section === 'seasons' || section === 'characters') && id) crumbs.push({ label: seasonTitle(seasons.find((s) => s.id === id) ?? { title: '', id }) })
   if (section === 'settings' && id) crumbs.push({ label: { access: 'Права доступа', integrations: 'Интеграции', system: 'Системные' }[id] ?? id })
   return crumbs
 }

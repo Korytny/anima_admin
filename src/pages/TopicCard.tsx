@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Copy, ExternalLink, ImageOff, Theater, Trash2 } from 'lucide-react'
-import type { Topic } from '@/types'
-import { scenePreview, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { Copy, ExternalLink, Theater, Trash2 } from 'lucide-react'
+import type { Season, Topic } from '@/types'
+import { scenePreview, seasonTitle, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { copyText, fmtBytes, fmtDateTime, fmtDuration, timeAgo } from '@/lib/utils'
@@ -12,31 +12,37 @@ import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { Button, Kbd, StatusBadge, Tabs, Thumb } from '@/components/ui'
 
-function groups(status: string | null): GroupDef<Topic>[] {
+/** Основные поля — сразу под медиа, без группы. */
+function mainGroup(status: string | null): GroupDef<Topic> {
+  return {
+    title: 'Основные',
+    flat: true,
+    fields: [
+      { key: 'title', type: 'textarea', rows: 2, required: true },
+      { key: 'status', type: 'select', options: statusOptions(TOPIC_STATUS, [status]).map((o) => ({ ...o, label: `${o.label} (${o.value})` })) },
+      { key: 'backlog', type: 'number', mono: true },
+      { key: 'duration', label: 'duration, сек', type: 'number', mono: true },
+      { key: 'visual_style' },
+    ],
+  }
+}
+
+function groups(seasons: Season[]): GroupDef<Topic>[] {
   return [
     {
-      title: 'Основные',
-      fields: [
-        { key: 'title', type: 'textarea', rows: 2, required: true },
-        { key: 'status', type: 'select', options: statusOptions(TOPIC_STATUS, [status]).map((o) => ({ ...o, label: `${o.label} (${o.value})` })) },
-        { key: 'backlog', type: 'number', mono: true },
-        { key: 'duration', label: 'duration, сек', type: 'number', mono: true },
-        { key: 'visual_style' },
-      ],
-    },
-    {
       title: 'Контент',
+      defaultOpen: false,
       fields: [
-        { key: 'extended_description', type: 'textarea', rows: 5 },
-        { key: 'script_scenas', type: 'textarea', rows: 8 },
+        { key: 'season_id', label: 'сезон', type: 'select', options: [{ value: '', label: '— без сезона —' }, ...seasons.map((s) => ({ value: s.id, label: seasonTitle(s) }))] },
+        { key: 'logline', label: 'логлайн', type: 'textarea', rows: 3 },
+        { key: 'beats', label: 'биты', type: 'list', rows: 8 },
+        { key: 'script_scenas', label: 'script_scenas — сценарий', type: 'textarea', rows: 8 },
+        { key: 'script_shots', label: 'script_shots — шоты', type: 'textarea', rows: 8, mono: true },
       ],
     },
     {
-      title: 'Музыка и персонажи',
-      fields: [
-        { key: 'music' },
-        { key: 'chars', type: 'list', rows: 3 },
-      ],
+      title: 'Персонажи',
+      fields: [{ key: 'chars', type: 'list', rows: 3 }],
     },
     {
       title: 'Медиа',
@@ -47,14 +53,6 @@ function groups(status: string | null): GroupDef<Topic>[] {
         { key: 'size', type: 'readonly', render: (v) => fmtBytes(v as number | null) },
         { key: 'file_tiktok', type: 'url', mono: true },
         { key: 'file_tiktok_size', type: 'readonly', render: (v) => fmtBytes(v as number | null) },
-      ],
-    },
-    {
-      title: 'Данные (jsonb)',
-      defaultOpen: false,
-      fields: [
-        { key: 'all', type: 'json', rows: 12 },
-        { key: 'all_eng', type: 'json', rows: 12 },
       ],
     },
     {
@@ -98,11 +96,12 @@ export function TopicCard({ topic, onClose, onDelete }: { topic: Topic | null; o
 
 function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => void }) {
   const navigate = useNavigate()
-  const { updateTopic } = useData()
+  const { updateTopic, seasons } = useData()
   const scenes = useScenesByTopic().get(topic.topic_id) ?? []
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(topic, 'topic_id', (patch) => updateTopic(topic.topic_id, patch))
   const [tab, setTab] = useState<Tab>('details')
-  const fieldGroups = useMemo(() => groups(topic.status), [topic.status])
+  const fieldGroups = useMemo(() => groups(seasons), [seasons])
+  const main = useMemo(() => [mainGroup(topic.status)], [topic.status])
   const video = topic.url_final || topic.file_tiktok
   const preview = topicPreview(scenes)
 
@@ -111,17 +110,11 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
   return (
     <>
       <PanelScroll>
-        <div className="space-y-2 p-4">
-          {video ? (
-            <VideoPlayer src={video} poster={preview} />
-          ) : preview ? (
-            <Thumb src={preview} className="aspect-video w-full rounded-lg" />
-          ) : (
-            <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border text-fg-3">
-              <ImageOff className="size-6" />
-              <span className="text-xs">Нет медиа</span>
-            </div>
-          )}
+        {(video || preview) && (
+          <div className="px-4 pt-4">{video ? <VideoPlayer src={video} poster={preview} /> : <Thumb src={preview} className="aspect-video w-full rounded-lg" />}</div>
+        )}
+        <FieldGroups groups={main} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
+        <div className="space-y-2 px-4 pb-4">
           <dl className="grid grid-cols-3 gap-2 pt-1">
             {[
               ['Длительность', fmtDuration(topic.duration)],

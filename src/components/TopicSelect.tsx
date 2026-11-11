@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { Select } from '@/components/ui'
 
-/** Последний выбранный ролик — общий для «Сцен» и «Персонажей». */
+/** Последний выбранный ролик — общий для «Сценария», «Сцен» и «Раскадровки». */
 export const LAST_TOPIC_KEY = 'scenes:lastTopic'
 
 /** Выбор ролика; ведёт на `${base}/${topicId}`. Ролики со сценами — наверху. */

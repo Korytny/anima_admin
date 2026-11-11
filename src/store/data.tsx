@@ -2,9 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { requestSceneImage } from '@/api/pipeline'
-import { NEW_TOPIC_TITLE } from '@/api/supabase'
+import { NEW_SEASON_TITLE, NEW_TOPIC_TITLE } from '@/api/supabase'
 import { uniqueFolder } from '@/lib/media'
-import type { Agent, Character, Scene, Topic } from '@/types'
+import type { Agent, Character, Scene, Season, Topic } from '@/types'
 
 // Пайплайн (n8n и т.п.) пишет в БД сам — периодически подтягиваем изменения.
 // Пока что-то генерируется — чаще.
@@ -20,12 +20,13 @@ interface DataState {
   scenes: Scene[]
   characters: Character[]
   agents: Agent[]
+  seasons: Season[]
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function useDataStore() {
-  const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], characters: [], agents: [] })
+  const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], characters: [], agents: [], seasons: [] })
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -36,7 +37,7 @@ function useDataStore() {
     const todo = topics.filter((t) => !t.folder && t.title?.trim() && t.title !== NEW_TOPIC_TITLE)
     if (!todo.length || assigning.current) return
     assigning.current = true
-    const taken = new Set(topics.map((t) => t.folder).filter((f): f is string => !!f))
+    const taken = new Set([...topics.map((t) => t.folder), ...stateRef.current.seasons.map((x) => x.folder)].filter((f): f is string => !!f))
     const done: Topic[] = []
     try {
       for (const t of todo) {
@@ -63,12 +64,47 @@ function useDataStore() {
     }
   }, [])
 
+  // Папка сезона (seasons.folder) — так же: один раз, по названию. Имена папок общие с роликами (всё лежит в anima/).
+  const assigningSeasons = useRef(false)
+  const assignSeasonFolders = useCallback(async (seasons: Season[], topics: Topic[]) => {
+    const todo = seasons.filter((x) => !x.folder && x.title?.trim() && x.title !== NEW_SEASON_TITLE)
+    if (!todo.length || assigningSeasons.current) return
+    assigningSeasons.current = true
+    const taken = new Set([...seasons.map((x) => x.folder), ...topics.map((t) => t.folder)].filter((f): f is string => !!f))
+    const done: Season[] = []
+    try {
+      for (const x of todo) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const folder = uniqueFolder(x.title, taken)
+          taken.add(folder)
+          try {
+            done.push(await api.updateSeason(x.id, { folder }))
+            break
+          } catch (e) {
+            if (!/duplicate key|seasons_folder_key/.test(errMsg(e))) throw e
+          }
+        }
+      }
+    } catch (e) {
+      // колонки folder ещё нет (не выполнен supabase/characters_season.sql) — молча ждём
+      if (!/folder/.test(errMsg(e))) toast.error('Не удалось назначить папку сезону', { description: errMsg(e) })
+    } finally {
+      assigningSeasons.current = false
+    }
+    if (done.length) {
+      const map = new Map(done.map((x) => [x.id, x]))
+      setState((s) => ({ ...s, seasons: s.seasons.map((x) => map.get(x.id) ?? x) }))
+      toast.success(`Папка сезона: ${done.map((x) => x.folder).join(', ')}`)
+    }
+  }, [])
+
   const load = useCallback(async (silent = false) => {
     setState((s) => ({ ...s, refreshing: true }))
     try {
-      const [topics, scenes, characters, agents] = await Promise.all([api.listTopics(), api.listScenes(), api.listCharacters(), api.listAgents()])
-      setState({ loading: false, refreshing: false, error: null, topics, scenes, characters, agents })
+      const [topics, scenes, characters, agents, seasons] = await Promise.all([api.listTopics(), api.listScenes(), api.listCharacters(), api.listAgents(), api.listSeasons()])
+      setState({ loading: false, refreshing: false, error: null, topics, scenes, characters, agents, seasons })
       void assignFolders(topics)
+      void assignSeasonFolders(seasons, topics)
     } catch (e) {
       if (!silent) toast.error('Не удалось загрузить данные', { description: errMsg(e) })
       setState((s) => ({ ...s, loading: false, refreshing: false, error: errMsg(e) }))
@@ -161,7 +197,12 @@ function useDataStore() {
         const map = new Map(marked.map((x) => [x.scene_id, x]))
         setState((s) => ({ ...s, scenes: s.scenes.map((x) => map.get(x.scene_id) ?? x) }))
 
-        const results = await Promise.allSettled(scenes.map((sc) => requestSceneImage(sc, topics.find((t) => t.topic_id === sc.topic), sceneCharacters(sc, characters))))
+        const results = await Promise.allSettled(
+          scenes.map((sc) => {
+            const t = topics.find((x) => x.topic_id === sc.topic)
+            return requestSceneImage(sc, t, sceneCharacters(sc, seasonCharacters(t?.season_id, characters)))
+          }),
+        )
         const failed = ids.filter((_, i) => results[i].status === 'rejected')
         if (failed.length) {
           const reason = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason
@@ -175,9 +216,9 @@ function useDataStore() {
         if (failed.length < ids.length) toast.success(`Генерация запущена: ${ids.length - failed.length}`)
       },
 
-      // ----- персонажи
-      async createCharacter(topicId: string) {
-        const c = await run(api.createCharacter(topicId), 'Персонаж добавлен')
+      // ----- персонажи (библиотека сезона)
+      async createCharacter(seasonId: string) {
+        const c = await run(api.createCharacter(seasonId), 'Персонаж добавлен')
         if (c) setState((s) => ({ ...s, characters: [c, ...s.characters] }))
         return c
       },
@@ -191,23 +232,45 @@ function useDataStore() {
         if (ok) setState((s) => ({ ...s, characters: s.characters.filter((x) => !ids.includes(x.id)) }))
       },
 
-      // ----- агенты (демо)
+      // ----- агенты
       async createAgent(data?: Partial<Agent>) {
         const a = await run(api.createAgent(data), 'Агент создан')
         if (a) setState((s) => ({ ...s, agents: [...s.agents, a] }))
         return a
       },
-      async updateAgent(id: string, patch: Partial<Agent>, silent = false) {
+      async updateAgent(id: number, patch: Partial<Agent>, silent = false) {
         const a = await run(api.updateAgent(id, patch), silent ? undefined : 'Сохранено')
         if (a) setState((s) => ({ ...s, agents: s.agents.map((x) => (x.id === id ? a : x)) }))
         return a
       },
-      async deleteAgents(ids: string[]) {
+      // ----- сезоны
+      async createSeason(data?: Partial<Season>) {
+        const x = await run(api.createSeason(data), 'Сезон создан')
+        if (x) setState((s) => ({ ...s, seasons: [...s.seasons, x] }))
+        return x
+      },
+      async updateSeason(id: string, patch: Partial<Season>) {
+        const x = await run(api.updateSeason(id, patch), 'Сохранено')
+        if (x) setState((s) => ({ ...s, seasons: s.seasons.map((y) => (y.id === id ? x : y)) }))
+        if (x) void assignSeasonFolders([x, ...stateRef.current.seasons.filter((y) => y.id !== id)], stateRef.current.topics)
+        return x
+      },
+      async deleteSeasons(ids: string[]) {
+        const ok = await run(api.deleteSeasons(ids).then(() => true), 'Сезон удалён')
+        if (ok)
+          setState((s) => ({
+            ...s,
+            seasons: s.seasons.filter((x) => !ids.includes(x.id)),
+            topics: s.topics.map((t) => (t.season_id && ids.includes(t.season_id) ? { ...t, season_id: null } : t)),
+          }))
+      },
+
+      async deleteAgents(ids: number[]) {
         const ok = await run(api.deleteAgents(ids).then(() => true), `Удалено агентов: ${ids.length}`)
         if (ok) setState((s) => ({ ...s, agents: s.agents.filter((a) => !ids.includes(a.id)) }))
       },
     }),
-    [run, load, assignFolders],
+    [run, load, assignFolders, assignSeasonFolders],
   )
 
   return { ...state, ...actions }
@@ -267,13 +330,58 @@ export function topicPreview(scenes: Scene[] | undefined) {
 
 const norm = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
 
-/** Персонажи сцены: того же ролика, имя есть в scene.character или = speaking_character. */
-export function sceneCharacters(scene: Scene, characters: Character[]) {
+/** Библиотека персонажей сезона. */
+export const seasonCharacters = (seasonId: string | null | undefined, characters: Character[]) =>
+  seasonId ? characters.filter((c) => c.season === seasonId) : []
+
+/** Персонажи сцены из библиотеки (pool — персонажи сезона серии): имя есть в scene.character или = speaking_character. */
+export function sceneCharacters(scene: Scene, pool: Character[]) {
   const names = new Set([...(scene.character ?? []), scene.speaking_character].map(norm).filter(Boolean))
-  return characters.filter((c) => c.topic === scene.topic && names.has(norm(c.name)))
+  return pool.filter((c) => names.has(norm(c.name)))
+}
+
+/** Кто в кадре: имена из scene.character (+ говорящий), known — есть ли такой персонаж в библиотеке сезона (pool). */
+export function sceneCast(scene: Scene, pool: Character[]) {
+  const known = new Set(pool.map((c) => norm(c.name)))
+  const names = [...new Set([...(scene.character ?? []), scene.speaking_character].filter((x): x is string => !!x?.trim()).map((x) => x.trim()))]
+  return names.map((name) => ({ name, known: known.has(norm(name)) }))
 }
 
 /** Картинки персонажа (какое поле главное — пока не определено, берём все заполненные). */
 export const characterImages = (c: Character) => [c.base_img, c.pers_file, c.filename].filter((x): x is string => !!x)
 
 export const characterTitle = (c: Character) => c.name || `Персонаж ${shortId(c.id)}`
+
+// ----- сезоны и стадии серии
+
+/** Выбранный сезон (localStorage): id сезона | ALL_SEASONS | NO_SEASON. Общий для «Сезонов» и «Контент-плана». */
+export const SEASON_KEY = 'seasons:last'
+export const ALL_SEASONS = 'all'
+export const NO_SEASON = 'none'
+
+export const seasonTitle = (s?: Pick<Season, 'title' | 'id'> | null) => (s ? s.title || `Сезон ${shortId(s.id)}` : '—')
+
+/** Серии сезона по номеру (backlog). */
+export const seasonEpisodes = (seasonId: string, topics: Topic[]) =>
+  topics.filter((t) => t.season_id === seasonId).sort((a, b) => (a.backlog ?? 1e9) - (b.backlog ?? 1e9))
+
+export type Stage = 'idea' | 'beats' | 'script' | 'shots' | 'frames' | 'published'
+
+export const STAGES: Record<Stage, { label: string; color: string }> = {
+  idea: { label: 'Идея', color: '#71717A' },
+  beats: { label: 'Биты', color: '#3B82F6' },
+  script: { label: 'Сценарий', color: '#8B5CF6' },
+  shots: { label: 'Шоты', color: '#F59E0B' },
+  frames: { label: 'Кадры', color: '#10B981' },
+  published: { label: 'Опубликован', color: '#22C55E' },
+}
+
+/** Стадия серии — вычисляется по данным, руками не ведётся. */
+export function topicStage(t: Topic, scenes: Scene[] = []): Stage {
+  if (t.status === 'published') return 'published'
+  if (scenes.length && scenes.every((s) => s.base_image_url)) return 'frames'
+  if (scenes.length) return 'shots'
+  if (t.script_scenas?.trim()) return 'script'
+  if (t.beats?.some((b) => b.trim())) return 'beats'
+  return 'idea'
+}

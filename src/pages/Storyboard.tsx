@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { ImageOff, LayoutGrid } from 'lucide-react'
 import type { Scene } from '@/types'
-import { sceneCharacters, useData, useScenesByTopic } from '@/store/data'
+import { sceneCast, seasonCharacters, useData, useScenesByTopic } from '@/store/data'
+import { CastChips } from '@/components/CastChips'
 import { SCENE_STATUS, statusMeta } from '@/lib/status'
 import { mediaUrl, sceneCode } from '@/lib/media'
 import { cn, storageGet } from '@/lib/utils'
@@ -24,7 +25,9 @@ export function StoryboardPage() {
 
 function Board({ topicId }: { topicId: string }) {
   const [params, setParams] = useSearchParams()
-  const { characters, loading, deleteScenes } = useData()
+  const { characters, topics, loading, deleteScenes } = useData()
+  const seasonId = topics.find((t) => t.topic_id === topicId)?.season_id
+  const pool = useMemo(() => seasonCharacters(seasonId, characters), [seasonId, characters])
   const all = useScenesByTopic().get(topicId) ?? []
   const [show, setShow] = useState<Show>('all')
   const [confirm, setConfirm] = useState<string | null>(null)
@@ -82,7 +85,7 @@ function Board({ topicId }: { topicId: string }) {
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
               {shown.map((s) => (
-                <Frame key={s.scene_id} scene={s} cast={sceneCharacters(s, characters).map((c) => c.name ?? '')} active={s.scene_id === activeId} onClick={() => open(s.scene_id === activeId ? null : s.scene_id)} />
+                <Frame key={s.scene_id} scene={s} cast={sceneCast(s, pool)} active={s.scene_id === activeId} onClick={() => open(s.scene_id === activeId ? null : s.scene_id)} />
               ))}
             </div>
           )}
@@ -105,7 +108,7 @@ function Board({ topicId }: { topicId: string }) {
   )
 }
 
-function Frame({ scene, cast, active, onClick }: { scene: Scene; cast: string[]; active: boolean; onClick: () => void }) {
+function Frame({ scene, cast, active, onClick }: { scene: Scene; cast: { name: string; known: boolean }[]; active: boolean; onClick: () => void }) {
   const src = mediaUrl(scene.base_image_url)
   const [broken, setBroken] = useState<string>()
   const text = scene.dialogue_text || scene.action || scene.location_desc
@@ -132,7 +135,7 @@ function Frame({ scene, cast, active, onClick }: { scene: Scene; cast: string[];
           {scene.shot_type && <span className="truncate text-[11px] text-fg-3">{scene.shot_type}</span>}
         </div>
         {text && <p className="line-clamp-2 text-xs text-fg-2">{text}</p>}
-        {cast.length > 0 && <p className="mt-auto truncate text-[11px] text-fg-3">{cast.join(', ')}</p>}
+        {cast.length > 0 && <CastChips cast={cast} className="mt-auto" />}
       </div>
     </button>
   )

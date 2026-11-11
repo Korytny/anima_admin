@@ -4,7 +4,7 @@
 // topics.folder — транслит названия (+ -2, -3 при совпадении), назначает админка один раз (uniqueFolder).
 // Полный путь тоже понимаем — отрезаем корень: /…/ComfyUI/output/anima/…, c:/ComfyUI/…/output/…, C:\…\output\…
 // Полные URL (http…) отдаются как есть.
-import type { Character, Scene, Topic } from '@/types'
+import type { Character, Scene, Season, Topic } from '@/types'
 
 const slashes = (p: string) => p.trim().replace(/\\/g, '/').replace(/\/+$/, '')
 
@@ -76,8 +76,9 @@ export const sceneCode = (s: Pick<Scene, 'scena' | 'shot_num'>) => `${String(s.s
 /** Ожидаемый путь кадра сцены. */
 export const scenePath = (s: Scene, topic: TopicRef) => `${topicDir(topic, s.topic)}/scenes/${sceneCode(s)}.png`
 
-/** Ожидаемый путь картинки персонажа. */
-export const characterPath = (c: Character, topic: TopicRef) => `${topicDir(topic, c.topic)}/characters/${slug(c.name ?? c.id)}.png`
+/** Ожидаемый путь картинки персонажа: папка сезона (все персонажи сезона в одной папке). */
+export const characterPath = (c: Character, season: Pick<Season, 'id' | 'folder'> | undefined) =>
+  `anima/${season?.folder || c.season || 'no-season'}/characters/${slug(c.name ?? c.id)}.png`
 
 /** filename_prefix для SaveImage в ComfyUI (ComfyUI сам допишет _00001_.png). */
 export const outputPrefix = (s: Scene, topic: TopicRef) => `${topicDir(topic, s.topic)}/scenes/${sceneCode(s)}`

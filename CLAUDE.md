@@ -1,6 +1,6 @@
 # Anima Admin — Pipeline Manager
 
-Админка для производства видеороликов поверх Supabase: контент-план (`topics`), сцены (`scenes`), агенты и настройки (пока демо).
+Админка для производства видеороликов поверх Supabase: сезоны (`seasons`), контент-план (`topics`), сценарий, сцены (`scenes`), раскадровка, персонажи (`characters`), агенты (`agents`); настройки — пока демо.
 Исходное ТЗ — `README.md`. Ниже — решения, которые от него **отличаются или его уточняют**. При конфликте приоритет у этого файла.
 
 ## Команды
@@ -22,16 +22,31 @@ shadcn/ui как пакет не используется — свои комп�
 
 ## База данных (Supabase)
 
-- `public.topics` — ролики. PK `topic_id uuid`. Поля: title (NOT NULL), status (text), extended_description, script_scenas, music, chars text[], duration, backlog, visual_style, url, url_final, size, file_tiktok(+_size), all/all_eng jsonb, updated_at. **Нет created_at.**
+- `public.topics` — ролики. PK `topic_id uuid`. Поля: title (NOT NULL), status (text), extended_description (сейчас не используется), script_scenas (сценарий серии от сценариста), script_shots (шоты от Редактора), music, chars text[], duration, backlog, visual_style, url, url_final, size, file_tiktok(+_size), all/all_eng jsonb, updated_at. **Нет created_at.**
+- `public.seasons` — сезоны (арки из серий): title, logline, theme (сквозной вопрос), bible (markdown для агентов), source (первоисточник), status. Серия = topic с `season_id`; **номер серии = `topics.backlog`** (отдельной колонки нет). У серии: `logline`, `beats text[]`, `source_excerpt`. SQL: `supabase/seasons.sql`.
 - `public.scenes` — сцены/шоты. PK `scene_id uuid`, `topic uuid → topics.topic_id`. Порядок: `scena` (номер сцены), затем `shot_num`. `char_img_url`, `character` — text[]; `speaker_voice_profile` — jsonb.
-- `public.characters` — персонажи. PK `id uuid`, `topic uuid` (ролик). Со сценой связаны **по имени**: `scenes.character[]` / `speaking_character` ↔ `characters.name` в рамках того же topic (`sceneCharacters()` в store). Файлы персонажа: `base_img`, `pers_file`, `filename` (какой главный — не определено, показываем все). `updated_at` нет.
+- `public.characters` — **библиотека персонажей сезона**. PK `id uuid`, `season uuid` (→ seasons.id; колонка переименована из `topic`, в старых записях там id ролика). Возрастные варианты — отдельные записи (`Karna_boy`, `Karna`). Серия выбирает своих в `topics.chars` (карточка серии, выбор из библиотеки). Со сценой связаны **по имени**: `scenes.character[]` / `speaking_character` ↔ `characters.name` среди персонажей сезона серии (`seasonCharacters()` + `sceneCharacters()` в store). Картинки — в одной папке сезона `anima/<seasons.folder>/characters/`. SQL: `supabase/characters_season.sql`. Файлы персонажа: `base_img`, `pers_file`, `filename` (какой главный — не определено, показываем все). `updated_at` нет.
+- `public.agents` — агенты: `id bigint`, name, description, `prompt` (markdown, системный промпт), model, `is_active bool`, created_at. Ключей провайдеров в таблице нет. `{{var}}` в промпте показываются как переменные.
 - Статусы — свободный text. Известные значения раскрашиваются (`lib/status.ts`), неизвестные показываются как есть серым (`statusMeta`). В topics встречаются: draft, pending, published (+ мусор).
 - Доступ: Supabase Auth + RLS, разрешено только пользователям из `public.admin_users` (`supabase/policies.sql`). n8n/сервисы работают через service_role и RLS не затрагиваются.
 - Остальные таблицы БД (voices, orders, stories, locations, songs, act_templates, narrative_base…) админка пока не трогает.
 
+## Старт производства (сезоны)
+
+Единая воронка для любого проекта; меняются только библия сезона и промпты агентов:
+```
+Сезон (логлайн, сквозной вопрос, библия, карта серий)
+  → Серия (логлайн + 3–10 битов + выжимка первоисточника)
+    → Сценарий (script_scenas) → Шоты (scenes, через Редактора) → Кадры → Видео
+```
+Агенты на переходах: `agents.prompt` — **системный промпт, общий, без конкретики проекта**. **Сбор данных и формирование промпта — только в n8n (бекенд), не в админке.** Админка шлёт на вебхук лишь id; n8n сам читает БД, вызывает агента и пишет результат.
+- Сценарий серии: кнопка «Сгенерировать сценарий» в карточке серии → `VITE_N8N_SCRIPT_WEBHOOK`, тело `{action:'episode_script', topic_id}` (`api/pipeline.ts`). n8n пишет ответ в `topics.script_scenas`. Агент «Сценарист по битам» (`supabase/seeds/agent_beats_to_script.sql`), ответ в рамке `===STORY===…===END===` (парсер отрезает всё снаружи).
+Сиды данных — `supabase/seeds/*.sql` (идемпотентные).
+На каждом переходе человек принимает результат. Стадия серии **вычисляется** по данным (`topicStage` в store): idea → beats → script → shots → frames → published; руками не ведётся. Связи между сериями пишутся в тексте бита: «проклятие (→10)».
+
 ## Сценарий
 
-`topics.extended_description` — промежуточный результат агента-сценариста: история, разбитая по локациям и сценам. По нему потом строятся шоты в `scenes`. Парсер: `lib/script.ts`. Формат:
+`topics.script_scenas` — результат агента-сценариста (раньше писался в `extended_description`): история, разбитая по локациям и сценам. По нему потом строятся шоты в `scenes`. Парсер: `lib/script.ts`. Формат:
 ```
 === ЛОКАЦИЯ: <название> ===
 @Scene: <N> — <бит>
@@ -53,7 +68,7 @@ shadcn/ui как пакет не используется — свои комп�
 Пары `visual_prompt` → `manual_prompt` потом используем, чтобы улучшить автоматические промпты.
 - `visual_prompt` — **авто-промпт, вручную не перезаписываем**; правка человека идёт только в `manual_prompt`. В карточке сцены показывается разница (`PromptDiff`).
 - Пути в БД — **относительно ComfyUI/output** (схема в `lib/media.ts`):
-  `anima/<folder>/characters/<slug имени>.png`, `anima/<folder>/scenes/<scena 2 знака>-<shot_num>.png`.
+  `anima/<seasons.folder>/characters/<slug имени>.png` (персонажи — общие на сезон), `anima/<topics.folder>/scenes/<scena 2 знака>-<shot_num>.png`. `seasons.folder` назначается так же, как `topics.folder` (`assignSeasonFolders`).
 - `topics.folder` — папка ролика: транслит названия, при совпадении `-2`, `-3`… Назначает **админка** (единственное место, где создаются ролики) один раз, как только у ролика есть настоящее название (не «Новый ролик»): `assignFolders` в `store/data.tsx`, `uniqueFolder` в `lib/media.ts`. Дальше не меняется — переименование ролика пути не ломает. В БД — только колонка и уникальный индекс `topics_folder_key` (`supabase/topic_folder.sql`), триггеров нет.
   Полный путь тоже понимается: корень `VITE_MEDIA_ROOT` (по умолчанию = `MEDIA_DIR`) или всё до `/output/` отрезается. `PathHint` под полем подсказывает путь и предлагает сократить полный.
 - Класть **оригинальные PNG из ComfyUI** (в них зашиты workflow/промпт/seed) — позже вытащим `manual_prompt` автоматически.
@@ -70,7 +85,7 @@ shadcn/ui как пакет не используется — свои комп�
 - **Только быстрая карточка справа**, без нижней «расширенной». Клик по строке открывает карточку, чекбокс — для массовых действий.
 - **Контекстная панель ролика** — только на странице «Сцены».
 - **Оплаты нет.** Задач генерации (Task) **нет** — в БД такой таблицы нет; вернёмся, когда появится.
-- **Агенты и Настройки — демо** (in-memory, `src/api/demo.ts`, бейдж «демо» в меню): таблиц под них нет. Агенты = конфигурация промптов/моделей. API-ключи write-only (наружу только `key_hint`).
+- **Агенты — реальная таблица `agents`** (промпт + модель). **Настройки — демо** (in-memory, `src/api/demo.ts`, бейдж «демо» в меню): таблиц нет. API-ключи write-only (наружу только `key_hint`).
 - **Перетаскивание сцен отключено**: порядок задаётся полями `scena`/`shot_num`, правится в карточке.
 - **Резиновая вёрстка**, карточка на `xl+` раздвигает контент, на узких — оверлей.
 - Интерфейс только на русском; комментарии/история/уведомления — отложены.
@@ -82,8 +97,8 @@ src/
   types.ts            — Topic, Scene (= колонки БД) + демо-сущности
   lib/supabase.ts     — клиент Supabase (anon key)
   api/types.ts        — интерфейс Api (контракт слоя данных)
-  api/supabase.ts     — topics/scenes через Supabase (постраничная выборка по 1000)
-  api/demo.ts         — демо in-memory для агентов/пользователей/интеграций/системных настроек
+  api/supabase.ts     — topics/scenes/characters/agents через Supabase (постраничная выборка по 1000)
+  api/demo.ts         — демо in-memory для пользователей/интеграций/системных настроек
   api/index.ts        — сборка api = demo + supabase
   store/data.tsx      — DataProvider/useData: загрузка, CRUD с тостами, автообновление каждые 20 с;
                         хелперы topicTitle, useScenesByTopic, topicPreview, sortScenes
@@ -94,7 +109,7 @@ src/
   components/SidePanel.tsx  — карточка справа (+ PanelScroll, PanelFooter)
   components/FieldGroups.tsx — декларативный редактор полей (text/textarea/number/select/list(text[])/json(jsonb)/readonly)
   components/layout/  — Sidebar, Topbar, CommandMenu, AppLayout
-  pages/              — Dashboard, ContentPlan + TopicCard, Script (сценарий из extended_description), Scenes + SceneCard, Storyboard (сетка кадров), Characters + CharacterCard, Agents, Settings
+  pages/              — Seasons (карта серий + библия), Dashboard, ContentPlan + TopicCard, Script (сценарий из script_scenas), Scenes + SceneCard, Storyboard (сетка кадров), Characters + CharacterCard, Agents, Settings
   components/TopicSelect.tsx — выбор ролика (общий для Сцен/Персонажей, последний — в localStorage)
   api/pipeline.ts     — вебхуки n8n (генерации)
   lib/media.ts        — mediaUrl(): относительный путь → URL
@@ -105,7 +120,7 @@ supabase/policies.sql — admin_users, is_admin(), RLS-политики, FK scen
 
 - UI ходит в данные только через `api`. Новая таблица → методы в `Api` + реализация в `api/supabase.ts`.
 - Пустые значения nullable-полей сохраняются как `null` (не `''`); NOT NULL поля помечаются `required` в FieldDef.
-- Маршруты: `/dashboard`, `/topics/:topicId?`, `/scenes/:topicId?` (`?scene=<id>`), `/script/:topicId?`, `/storyboard/:topicId?` (`?scene=<id>`), `/characters/:topicId?` (`?character=<id>`), `/agents` (`?agent=`), `/settings/:section?`. Выбранная сущность — в URL.
+- Маршруты: `/seasons/:seasonId?` (`?ep=<topic_id>`), `/dashboard`, `/topics/:topicId?`, `/scenes/:topicId?` (`?scene=<id>`), `/script/:topicId?`, `/storyboard/:topicId?` (`?scene=<id>`), `/characters/:seasonId?` (`?character=<id>`), `/agents` (`?agent=`), `/settings/:section?`. Выбранная сущность — в URL.
 - Настройки таблиц и фильтры — в localStorage по `storageKey`.
 - Карточки описываются через `GroupDef/FieldDef`; новое поле БД = строка в конфиге группы.
 - Права проверяет БД (RLS); фронт ничего не скрывает «для безопасности».

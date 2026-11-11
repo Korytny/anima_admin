@@ -3,10 +3,11 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
 import type { Scene } from '@/types'
-import { scenePreview, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { sceneCast, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
+import { CastChips } from '@/components/CastChips'
 import {
   Avatar,
   Badge,
@@ -62,6 +63,7 @@ function TopicScenes({ topicId }: { topicId: string }) {
   const { topics, scenes: allScenes, characters: allCharacters, loading, createScene, deleteScenes, updateScenes, generateSceneImages } = useData()
   const all = useScenesByTopic().get(topicId) ?? []
   const topic = topics.find((t) => t.topic_id === topicId)
+  const pool = useMemo(() => seasonCharacters(topic?.season_id, allCharacters), [topic?.season_id, allCharacters])
   const [selection, setSelection] = useState<RowSelectionState>({})
   const [confirm, setConfirm] = useState<string[] | null>(null)
   const [q, setQ] = useState('')
@@ -72,14 +74,15 @@ function TopicScenes({ topicId }: { topicId: string }) {
     localStorage.setItem(LAST_KEY, JSON.stringify(topicId))
   }, [topicId])
 
-  const characters = useMemo(() => [...new Set(all.map((s) => s.speaking_character).filter((c): c is string => !!c))], [all])
+  // все, кто в кадре или говорит
+  const characters = useMemo(() => [...new Set(all.flatMap((s) => [...(s.character ?? []), s.speaking_character]).filter((c): c is string => !!c?.trim()))].sort(), [all])
   const filtersActive = !!(q || statuses.length || character)
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase()
     return all.filter(
       (s) =>
         (!statuses.length || statuses.includes(s.status ?? '')) &&
-        (!character || s.speaking_character === character) &&
+        (!character || s.speaking_character === character || !!s.character?.includes(character)) &&
         (!ql || [s.dialogue_text, s.action, s.location_desc, s.visual_prompt, s.speaking_character].join(' ').toLowerCase().includes(ql)),
     )
   }, [all, q, statuses, character])
@@ -133,8 +136,16 @@ function TopicScenes({ topicId }: { topicId: string }) {
         cell: ({ getValue }) => <StatusBadge meta={statusMeta(SCENE_STATUS, getValue())} />,
       },
       {
+        id: 'cast',
+        header: 'В кадре',
+        size: 200,
+        enableSorting: false,
+        meta: { label: 'В кадре' },
+        cell: ({ row }) => <CastChips cast={sceneCast(row.original, pool)} className="overflow-hidden" />,
+      },
+      {
         accessorKey: 'speaking_character',
-        header: 'Персонаж',
+        header: 'Говорит',
         size: 160,
         meta: { label: 'Персонаж' },
         cell: ({ getValue }) =>
@@ -207,7 +218,7 @@ function TopicScenes({ topicId }: { topicId: string }) {
     ],
     // open/setConfirm стабильны по смыслу
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [pool],
   )
 
   if (!loading && !topic) {
