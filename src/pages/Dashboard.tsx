@@ -6,6 +6,7 @@ import { topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { TOPIC_STATUS, statusMeta } from '@/lib/status'
 import { cn, timeAgo } from '@/lib/utils'
 import { Skeleton, StatusBadge } from '@/components/ui'
+import { SeasonPipeline } from '@/components/SeasonPipeline'
 
 const AXIS = { stroke: '#71717A', fontSize: 11, tickLine: false, axisLine: false } as const
 const GRID = <CartesianGrid stroke="#2A2A35" vertical={false} />
@@ -118,10 +119,16 @@ export function DashboardPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="grid gap-4 p-6 md:grid-cols-2 2xl:grid-cols-4">
-        <Stat label="Всего роликов" value={topics.length} icon={<Clapperboard />} sub={`${d.drafts} черновиков`} />
-        <Stat label="В работе (pending)" value={d.pending} icon={<Loader2 />} />
-        <Stat label="Опубликовано" value={d.published} icon={<CheckCircle2 />} sub={`${Math.round((d.published / total) * 100)}% от всех`} />
-        <Stat label="Сцен" value={scenes.length} icon={<Theater />} sub={`${d.scenesWithVideo} с видео`} />
+        <div className="md:col-span-2 2xl:col-span-4">
+          <SeasonPipeline />
+        </div>
+        <h2 className="pt-2 text-xs font-semibold tracking-wide text-fg-3 uppercase md:col-span-2 2xl:col-span-4">Все ролики</h2>
+        <div className="grid grid-cols-2 gap-4 md:col-span-2 md:grid-cols-4 2xl:col-span-4">
+          <Stat label="Всего роликов" value={topics.length} icon={<Clapperboard />} sub={`${d.drafts} черновиков`} />
+          <Stat label="В работе (pending)" value={d.pending} icon={<Loader2 />} />
+          <Stat label="Опубликовано" value={d.published} icon={<CheckCircle2 />} sub={`${Math.round((d.published / total) * 100)}% от всех`} />
+          <Stat label="Сцен" value={scenes.length} icon={<Theater />} sub={`${d.scenesWithVideo} с видео`} />
+        </div>
 
         <Panel title="Ролики по статусам" className="2xl:col-span-2">
           <div className="h-60">

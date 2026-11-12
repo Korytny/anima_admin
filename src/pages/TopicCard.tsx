@@ -170,10 +170,7 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
                   {s.scena ?? '—'}.{s.shot_num ?? '—'}
                 </span>
                 <Thumb src={scenePreview(s)} className="h-8 w-14 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px]">{s.speaking_character || '—'}</span>
-                  <span className="block truncate text-xs text-fg-3">{s.dialogue_text || s.action}</span>
-                </span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{s.dialogue_text || s.action || '—'}</span>
                 <StatusBadge meta={statusMeta(SCENE_STATUS, s.status)} />
               </button>
             ))}

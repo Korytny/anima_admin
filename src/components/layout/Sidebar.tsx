@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Bot, Clapperboard, Cpu, Film, LayoutDashboard, LayoutGrid, Library, LogOut, Mic, Music2, PanelLeftClose, PanelLeftOpen, Scissors, ScrollText, Settings, Theater, Users } from 'lucide-react'
+import { Bot, Clapperboard, Cpu, Film, LayoutDashboard, LayoutGrid, Library, LogOut, Mic, Music2, Palette, PanelLeftClose, PanelLeftOpen, Scissors, ScrollText, Settings, Theater, Users, Workflow } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { signOut, useSession } from '../AuthGate'
 import { Avatar } from '../ui'
@@ -8,6 +8,8 @@ export const NAV = [
   { to: '/dashboard', label: 'Дашборд', icon: LayoutDashboard, demo: false },
   { to: '/seasons', label: 'Сезоны', icon: Library, demo: false },
   { to: '/topics', label: 'Контент-план', icon: Clapperboard, demo: false },
+  { to: '/styles', label: 'Стиль', icon: Palette, demo: false },
+  { to: '/characters', label: 'Персонажи', icon: Users, demo: false },
   { to: '/script', label: 'Сценарий', icon: ScrollText, demo: false },
   { to: '/scenes', label: 'Сцены ролика', icon: Theater, demo: false },
   { to: '/storyboard', label: 'Раскадровка', icon: LayoutGrid, demo: false },
@@ -15,8 +17,8 @@ export const NAV = [
   { to: '/animation', label: 'Анимация', icon: Film, demo: false },
   { to: '/music', label: 'Музыка', icon: Music2, demo: false },
   { to: '/montage', label: 'Монтаж', icon: Scissors, demo: false },
-  { to: '/characters', label: 'Персонажи', icon: Users, demo: false },
   { to: '/agents', label: 'Агенты', icon: Bot, demo: false },
+  { to: '/processes', label: 'Процессы', icon: Workflow, demo: false },
   { to: '/compute', label: 'Вычисления', icon: Cpu, demo: false },
   { to: '/settings', label: 'Настройки', icon: Settings, demo: true },
 ] as const

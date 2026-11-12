@@ -2,6 +2,7 @@
 // n8n сам пишет результат в БД (service_role): base_image_url = путь, status = 'ready' | 'error'.
 import type { Character, Scene, Season, Topic } from '@/types'
 import { outputPrefix } from '@/lib/media'
+import { styleById } from '@/lib/styles'
 import { supabase } from '@/lib/supabase'
 
 const IMAGE_WEBHOOK = import.meta.env.VITE_N8N_IMAGE_WEBHOOK as string | undefined
@@ -22,6 +23,7 @@ export async function requestSceneImage(scene: Scene, topic: Topic | undefined, 
       output_prefix: outputPrefix(scene, topic, season), // anima/<сезон>/<серия>/<код>
       prompt: scene.manual_prompt || scene.visual_prompt, // ручной приоритетнее
       visual_style: topic?.visual_style ?? null,
+      style: styleById(season?.style) ?? null, // стиль сезона: { id, lora, strength, trigger, promptSuffix, … } — n8n подставляет LoRA
       requested_by: data.user?.email ?? null,
       scene,
       characters, // записи characters этой сцены (картинки: base_img / pers_file / filename)

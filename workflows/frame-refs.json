@@ -1,0 +1,178 @@
+{
+  "2": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_int8_convrot.safetensors",
+      "type": "flux3",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Загрузить CLIP"
+    }
+  },
+  "3": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Загрузить VAE"
+    }
+  },
+  "7": {
+    "inputs": {
+      "seed": 775515420451459,
+      "steps": 27,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "59",
+        0
+      ],
+      "positive": [
+        "17",
+        0
+      ],
+      "negative": [
+        "17",
+        1
+      ],
+      "latent_image": [
+        "17",
+        2
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "#seed"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Декодировать VAE"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "anima/season/episode/code",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "#save"
+    }
+  },
+  "17": {
+    "inputs": {
+      "resolution": "resize",
+      "resolution.megapixels": 1,
+      "positive": [
+        "62",
+        0
+      ],
+      "negative": [
+        "58",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "images.image0": [
+        "54",
+        0
+      ],
+      "images.image1": [
+        "60",
+        0
+      ],
+      "images.image2": [
+        "63",
+        0
+      ]
+    },
+    "class_type": "ReferenceMultiLatent",
+    "_meta": {
+      "title": "Задать набор эталонных латентов"
+    }
+  },
+  "54": {
+    "inputs": {
+      "image": "image_flux3_klein_distilled_t2i_00001_.png [output]"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "#ref1"
+    }
+  },
+  "58": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "#negative"
+    }
+  },
+  "59": {
+    "inputs": {
+      "unet_name": "flux3-image-klein-int8-convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Загрузить модель диффузии"
+    }
+  },
+  "60": {
+    "inputs": {
+      "image": "flux3_klein_int8_t2i_00001_.png [output]"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "#ref2"
+    }
+  },
+  "62": {
+    "inputs": {
+      "text": "girl in image1 фив guy frim image3 on reception in hotel image0",
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "#prompt"
+    }
+  },
+  "63": {
+    "inputs": {
+      "image": "flux_fill_inpaint_example_input_image.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "#ref3"
+    }
+  }
+}

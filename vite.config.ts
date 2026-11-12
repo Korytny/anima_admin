@@ -6,6 +6,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
 import { parseServers, serverStats } from './server/comfy'
+import { listWorkflows, readWorkflow } from './server/workflows'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
@@ -99,6 +100,15 @@ function runpodApi(key: string | undefined, supabaseUrl: string | undefined, ano
   const handler = async (req: import('node:http').IncomingMessage, res: ServerResponse) => {
     try {
       const url = (req.url ?? '/').split('?')[0]
+      // Процессы ComfyUI из папки workflows/ — для страницы «Процессы» и для n8n (только чтение)
+      if (req.method === 'GET' && url === '/workflows') return send(res, 200, listWorkflows())
+      const wm = /^\/workflows\/([^/]+)$/.exec(url)
+      if (req.method === 'GET' && wm) {
+        const raw = readWorkflow(decodeURIComponent(wm[1]))
+        if (raw == null) return send(res, 404, { error: 'Нет такого процесса' })
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        return res.end(raw)
+      }
       // Свои серверы с ComfyUI (COMPUTE_SERVERS) — только чтение, без проверки входа: ComfyUI и так открыт в локальной сети
       if (req.method === 'GET' && url === '/servers') return send(res, 200, servers)
       const sm = /^\/servers\/([^/]+)\/stats$/.exec(url)

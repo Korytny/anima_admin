@@ -40,5 +40,6 @@ export const podComfyUrl = (id: string) => `https://${id}-8188.proxy.runpod.net`
 // ----- свои серверы с ComfyUI (COMPUTE_SERVERS в .env.local; типы — server/comfy.ts)
 export type { ComputeServer, ServerStats, Generation, KindStats } from '../../server/comfy'
 import type { ComputeServer, ServerStats } from '../../server/comfy'
+export const getWorkflows = () => call<import('@/lib/workflows').WorkflowFile[]>('/workflows')
 export const getServers = () => call<ComputeServer[]>('/servers')
 export const getServerStats = (id: string) => call<ServerStats>(`/servers/${id}/stats`)

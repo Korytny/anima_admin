@@ -16,6 +16,8 @@ import { AnimationPage } from '@/pages/Animation'
 import { MontagePage } from '@/pages/Montage'
 import { MusicPage } from '@/pages/Music'
 import { ComputePage } from '@/pages/Compute'
+import { StylesPage } from '@/pages/Styles'
+import { ProcessesPage } from '@/pages/Processes'
 import { ScriptPage } from '@/pages/Script'
 import { AgentsPage } from '@/pages/Agents'
 import { SeasonsPage } from '@/pages/Seasons'
@@ -40,8 +42,10 @@ const router = createBrowserRouter([
       { path: 'animation/:topicId?', element: <AnimationPage /> },
       { path: 'music/:topicId?', element: <MusicPage /> },
       { path: 'montage/:topicId?', element: <MontagePage /> },
+      { path: 'styles', element: <StylesPage /> },
       { path: 'characters/:seasonId?', element: <CharactersPage /> },
       { path: 'agents', element: <AgentsPage /> },
+      { path: 'processes', element: <ProcessesPage /> },
       { path: 'compute', element: <ComputePage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/topics" replace /> },

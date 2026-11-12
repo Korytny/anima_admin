@@ -42,6 +42,7 @@ export interface Season {
   bible: string | null // markdown: тон, правила диалогов, визуальный стиль
   source: string | null // первоисточник и версия канона
   folder: string | null // папка на диске (anima/<folder>/characters), назначает админка один раз
+  style: string | null // визуальный стиль сезона: id из lib/styles.ts (supabase/season_style.sql)
 }
 
 /** public.scenes — сцена (шот) ролика */
@@ -92,7 +93,8 @@ export interface Character {
   id: string // uuid, PK
   created_at: string | null
   season: string | null // uuid → seasons.id (в старых записях — id ролика)
-  name: string | null
+  name: string | null // тег (англ.): @Characters, промпты, связь со сценами — не переводить
+  name_ru: string | null // имя для человека: показывается в админке вместо тега
   role_key: string | null
   number: number | null
   status: string | null
