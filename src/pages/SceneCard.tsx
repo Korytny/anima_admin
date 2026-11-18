@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { AudioLines, Clapperboard, Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import type { Character, Scene, Season, Topic } from '@/types'
 import { useNavigate } from 'react-router-dom'
@@ -153,7 +153,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   }, [cast, scene])
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(scene, 'scene_id', (patch) => updateScene(scene.scene_id, patch))
   const [media, setMedia] = useState<Media>(scene.video_file ? 'video' : 'image')
-  const [img, setImg] = useState(0)
+  const [img, setImg] = useState<number | null>(null) // null — кадр сцены (или пусто, если кадра нет)
   const [applyAll, setApplyAll] = useState(false)
   const topic = topics.find((t) => t.topic_id === scene.topic)
   const season = seasons.find((x) => x.id === topic?.season_id)
@@ -161,14 +161,17 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const layout = useCardLayout('card:scene', codeGroups, draft)
   if (!draft) return null
 
-  const images = [...(scene.char_img_url ?? []), scene.base_image_url, scene.event_img].filter((x): x is string => !!x)
+  // Сначала кадр сцены, потом референсы персонажей. Нет кадра — большое окно пустое, пока не выбран референс
+  const frames = [scene.base_image_url, scene.event_img].filter((x): x is string => !!x)
+  const images = [...frames, ...(scene.char_img_url ?? []).filter(Boolean)]
+  const mainSrc = img != null ? images[img] : frames[0]
   const applyKeys = [...dirtyKeys].filter((k) => !NO_BULK.has(k))
   const generating = scene.status === GENERATING
 
   // Несохранённые правки промпта сначала пишем в БД — n8n берёт данные оттуда
   const generate = async () => {
     if (dirty && !(await submit())) return
-    setImg(0)
+    setImg(null)
     setMedia('image')
     await generateSceneImages([{ ...scene, ...draft }], topics, characters)
   }
@@ -200,26 +203,36 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
             />
           )}
           {media === 'video' && scene.video_file ? (
-            <VideoPlayer src={scene.video_file} poster={images[0]} subtitles={scene.video_sub || undefined} />
+            <VideoPlayer src={scene.video_file} poster={frames[0]} subtitles={scene.video_sub || undefined} />
           ) : (
             <>
               <div className="relative">
-                <Thumb src={images[img] ?? images[0]} className="aspect-video w-full rounded-lg object-contain" />
+                <Thumb src={mainSrc} className="aspect-video w-full rounded-lg object-contain" />
+                {!mainSrc && !generating && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-fg-3">Кадра ещё нет</div>
+                )}
                 {generating && (
                   <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-bg/70 text-sm text-fg-2 backdrop-blur-[1px]">
                     <Loader2 className="size-4 animate-spin" /> Генерация в n8n…
                   </div>
                 )}
               </div>
-              {images.length > 1 && (
-                <div className="flex gap-1.5 overflow-x-auto">
+              {images.length > 1 || (!frames.length && images.length) ? (
+                <div className="flex items-center gap-1.5 overflow-x-auto">
                   {images.map((p, i) => (
-                    <button key={p + i} onClick={() => setImg(i)} className={`shrink-0 rounded ring-2 ${i === img ? 'ring-accent' : 'ring-transparent'}`}>
-                      <Thumb src={p} className="h-10 w-16" />
-                    </button>
+                    <Fragment key={p + i}>
+                      {i === frames.length && <span className="shrink-0 pl-1 text-[11px] text-fg-3">Референсы:</span>}
+                      <button
+                        onClick={() => setImg(i)}
+                        title={i < frames.length ? 'Кадр сцены' : 'Референс персонажа'}
+                        className={`shrink-0 rounded ring-2 ${(img ?? (frames.length ? 0 : -1)) === i ? 'ring-accent' : 'ring-transparent'}`}
+                      >
+                        <Thumb src={p} className="h-10 w-16" />
+                      </button>
+                    </Fragment>
                   ))}
                 </div>
-              )}
+              ) : null}
             </>
           )}
           {(cast.length > 0 || missing.length > 0) && (

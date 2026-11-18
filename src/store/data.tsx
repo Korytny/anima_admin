@@ -395,7 +395,8 @@ export function useScenesByTopic() {
 }
 
 /** Превью сцены — сгенерированный кадр, иначе картинка персонажа. */
-export const scenePreview = (s: Scene) => s.base_image_url || s.char_img_url?.find(Boolean) || undefined
+/** Превью шота — только его кадр. Референсы персонажей не подставляем: иначе кажется, что кадр уже есть. */
+export const scenePreview = (s: Scene) => s.base_image_url || undefined
 
 /** Превью ролика — первая картинка первой сцены. */
 export function topicPreview(scenes: Scene[] | undefined) {
