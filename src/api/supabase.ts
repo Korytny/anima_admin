@@ -1,6 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import type { Agent, Season, Character, Scene, Topic } from '@/types'
+import type { Agent, AgentPromptVersion, Season, Character, Scene, Topic } from '@/types'
 
 const PAGE = 1000
 
@@ -113,6 +113,15 @@ export const supabaseData = {
 
   async updateAgent(id: number, patch: Partial<Agent>) {
     return check(await supabase.from('agents').update(patch).eq('id', id).select().single()) as Agent
+  },
+
+  // История промптов: supabase/agent_prompt_versions.sql
+  async listPromptVersions(agentId: number) {
+    return check(await supabase.from('agent_prompt_versions').select('*').eq('agent_id', agentId).order('id', { ascending: false })) as AgentPromptVersion[]
+  },
+
+  async addPromptVersion(v: Pick<AgentPromptVersion, 'agent_id' | 'prompt' | 'model' | 'source' | 'note'>) {
+    return check(await supabase.from('agent_prompt_versions').insert(v).select().single()) as AgentPromptVersion
   },
 
   async deleteAgents(ids: number[]) {

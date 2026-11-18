@@ -7,6 +7,7 @@ import type { ServerResponse } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
 import { parseServers, serverStats } from './server/comfy'
 import { listWorkflows, readWorkflow } from './server/workflows'
+import { assistantHandler } from './server/assistant'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
@@ -172,10 +173,24 @@ function runpodApi(key: string | undefined, supabaseUrl: string | undefined, ano
   }
 }
 
+function assistantApi(openaiKey: string | undefined, supabaseUrl: string | undefined, anonKey: string | undefined): Plugin {
+  const handler = assistantHandler({ openaiKey, supabaseUrl, anonKey })
+  return {
+    name: 'assistant-api',
+    configureServer(server) {
+      if (!openaiKey) server.config.logger.warn('[assistant] OPENAI_API_KEY не задан в .env.local — ассистент работать не будет')
+      server.middlewares.use('/assistant-api', (req, res) => void handler(req, res))
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use('/assistant-api', (req, res) => void handler(req, res))
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
-    plugins: [react(), tailwindcss(), mediaDir(env.MEDIA_DIR), runpodApi(env.RUNPOD_API_KEY, env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY, parseServers(env.COMPUTE_SERVERS, env.VITE_COMFY_URL))],
+    plugins: [react(), tailwindcss(), mediaDir(env.MEDIA_DIR), runpodApi(env.RUNPOD_API_KEY, env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY, parseServers(env.COMPUTE_SERVERS, env.VITE_COMFY_URL)), assistantApi(env.OPENAI_API_KEY, env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)],
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       // абсолютный путь к ComfyUI/output на сервере; по умолчанию = MEDIA_DIR

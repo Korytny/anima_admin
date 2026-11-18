@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ChevronRight, LogOut, Plus, RefreshCw, Search, Settings, Zap } from 'lucide-react'
+import { ChevronRight, LogOut, Plus, RefreshCw, Search, Settings, Sparkles, Zap } from 'lucide-react'
+import { useAssistant } from '../Assistant'
 import { seasonTitle, topicTitle, useData } from '@/store/data'
 import { cn } from '@/lib/utils'
 import { signOut, useSession } from '../AuthGate'
@@ -27,6 +28,7 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const navigate = useNavigate()
   const email = useSession()?.user.email ?? ''
   const { createTopic, reload, refreshing } = useData()
+  const assistant = useAssistant()
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4">
@@ -54,6 +56,10 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
           <span className="flex-1 truncate text-left">Поиск…</span>
           <Kbd>⌘K</Kbd>
         </button>
+
+        <Button variant="ghost" size="icon" onClick={assistant.toggle} aria-label="Ассистент" title="Ассистент (⌘J)">
+          <Sparkles className="text-accent" />
+        </Button>
 
         <Button variant="ghost" size="icon" onClick={reload} aria-label="Обновить данные" title="Обновить данные (автоматически каждые 20 с)">
           <RefreshCw className={cn(refreshing && 'animate-spin')} />

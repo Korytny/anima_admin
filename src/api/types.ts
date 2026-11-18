@@ -1,4 +1,4 @@
-import type { Agent, Season, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
+import type { Agent, AgentPromptVersion, Season, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
 
 /**
  * Контракт слоя данных. UI работает только через него.
@@ -32,6 +32,8 @@ export interface Api {
   createAgent(data?: Partial<Agent>): Promise<Agent>
   updateAgent(id: number, patch: Partial<Agent>): Promise<Agent>
   deleteAgents(ids: number[]): Promise<void>
+  listPromptVersions(agentId: number): Promise<AgentPromptVersion[]>
+  addPromptVersion(v: Pick<AgentPromptVersion, 'agent_id' | 'prompt' | 'model' | 'source' | 'note'>): Promise<AgentPromptVersion>
 
   listUsers(): Promise<User[]>
   inviteUser(email: string, role: User['role']): Promise<User>

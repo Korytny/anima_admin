@@ -21,7 +21,9 @@ export function ProcessesPage() {
       setError(e instanceof Error ? e.message : String(e))
     }
   }, [])
-  useEffect(() => void load(), [load])
+  useEffect(() => {
+    void load()
+  }, [load])
 
   const byName = new Map((files ?? []).map((f) => [f.name, f]))
   const extra = (files ?? []).filter((f) => !SLOTS.some((s) => s.file === f.name))

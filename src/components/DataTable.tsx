@@ -181,7 +181,9 @@ export function DataTable<T>({
     estimateSize: () => rowH,
     overscan: 12,
   })
-  useEffect(() => virtualizer.measure(), [rowH, virtualizer])
+  useEffect(() => {
+    virtualizer.measure()
+  }, [rowH, virtualizer])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
   const onDragEnd = (e: DragEndEvent) => {

@@ -1,3 +1,5 @@
+import { ranges } from './utils'
+
 // Парсер сценария из topics.script_scenas (результат агента-сценариста).
 // Формат:
 //   === ЛОКАЦИЯ: <название> ===
@@ -125,4 +127,110 @@ function parseNotes(pre: string): ScriptNote[] {
     else if (line && notes.length) notes[notes.length - 1].text += (notes[notes.length - 1].text ? '\n' : '') + line
   }
   return notes.map((n) => ({ ...n, text: n.text.trim() })).filter((n) => n.text)
+}
+
+// ── Проверка сценария по правилам агента-сценариста (Scenario/сценарист_рассказчик.md) ──
+// Формальные правила, которые модель нарушает: их проверяет код, а человек решает — править или перегенерировать.
+
+export const NARRATOR = 'Narrator'
+
+export interface ScriptIssue {
+  /** Номера сцен, к которым относится замечание (пусто — ко всему сценарию). */
+  scenes: number[]
+  text: string
+}
+
+export interface ScriptCheck {
+  issues: ScriptIssue[]
+  /** Слов у рассказчика всего и примерная длина ролика (2 слова в секунду). */
+  narratorWords: number
+  seconds: number
+  /** Реплики персонажей (не рассказчика). */
+  characterLines: number
+}
+
+const LIMITS = { silentScenes: 2, characterLines: 2, lineWords: 10, sceneWords: 30, minWords: 100, maxWords: 180 }
+const isNarrator = (s: string) => s.trim().toLowerCase() === NARRATOR.toLowerCase()
+const words = (s: string) => s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length
+const numList = (ns: number[]) => ns.join(', ')
+
+
+/** Ожидаемые метки @Beats из битов серии: HOOK, 1…N, КРЮЧОК (как в промпте сценариста). */
+function expectedBeats(beats: string[]): string[] {
+  const out: string[] = []
+  let n = 0
+  for (const b of beats.map((x) => x.trim()).filter(Boolean)) {
+    if (/^HOOK\b/i.test(b)) out.push('HOOK')
+    else if (/^КРЮЧОК\b/i.test(b)) out.push('КРЮЧОК')
+    else out.push(String(++n))
+  }
+  return out
+}
+
+const beatKey = (s: string) => (/^hook$/i.test(s) ? 'HOOK' : /^крючок$/i.test(s) ? 'КРЮЧОК' : s)
+
+export function checkScript(parsed: ParsedScript, opts: { beats?: string[] | null; known?: Set<string> }): ScriptCheck {
+  const issues: ScriptIssue[] = []
+  const { scenes } = parsed
+  const num = (s: ScriptScene, i: number) => s.num ?? i + 1
+  const known = opts.known
+  const isKnown = (tag: string) => !known || known.has(tag.trim().toLowerCase())
+
+  // Биты: все на месте и по порядку
+  const expected = opts.beats?.length ? expectedBeats(opts.beats) : []
+  if (expected.length) {
+    const seen: string[] = []
+    scenes.forEach((s) => {
+      for (const b of (s.extra.Beats ?? '').split(',').map((x) => beatKey(x.trim())).filter(Boolean)) if (!seen.includes(b)) seen.push(b)
+    })
+    const missing = expected.filter((b) => !seen.includes(b))
+    if (missing.length) issues.push({ scenes: [], text: `Нет битов: ${missing.join(', ')}` })
+    const order = seen.filter((b) => expected.includes(b))
+    if (order.some((b, i) => i > 0 && expected.indexOf(b) < expected.indexOf(order[i - 1]))) issues.push({ scenes: [], text: `Биты не по порядку: ${order.join(' → ')}` })
+  }
+
+  // Теги персонажей
+  if (known) {
+    // Одно замечание на все теги: «Karna (сц. 1–10), Drona (сц. 2)»
+    const bad = new Map<string, number[]>()
+    scenes.forEach((s, i) => s.characters.filter((c) => !isKnown(c)).forEach((c) => bad.set(c, [...(bad.get(c) ?? []), num(s, i)])))
+    if (bad.size)
+      issues.push({
+        scenes: [...new Set([...bad.values()].flat())].sort((a, b) => a - b),
+        text: `Нет в персонажах сезона: ${[...bad].map(([c, ns]) => `${c} (сц. ${ranges(ns)})`).join(', ')}`,
+      })
+  }
+
+  // Рассказчик: немые сцены, объём
+  const silent: number[] = []
+  let narratorWords = 0
+  scenes.forEach((s, i) => {
+    const narr = s.lines.filter((l) => isNarrator(l.speaker))
+    const w = narr.reduce((a, l) => a + words(l.text), 0)
+    narratorWords += w
+    if (!narr.length) silent.push(num(s, i))
+    else if (w > LIMITS.sceneWords) issues.push({ scenes: [num(s, i)], text: `У рассказчика ${w} слов в сцене (норма до ${LIMITS.sceneWords}) — текст, вероятно, объясняет соседние сцены` })
+  })
+  if (silent.length > LIMITS.silentScenes) issues.push({ scenes: silent, text: `Сцен без рассказчика ${silent.length}: ${numList(silent)} (норма — не больше ${LIMITS.silentScenes})` })
+  const runs = silent.filter((n) => silent.includes(n - 1) || silent.includes(n + 1))
+  if (runs.length) issues.push({ scenes: runs, text: `Сцены без рассказчика подряд: ${numList(runs)}` })
+  if (scenes.length && (narratorWords < LIMITS.minWords || narratorWords > LIMITS.maxWords))
+    issues.push({ scenes: [], text: `У рассказчика ${narratorWords} слов на серию (норма ${LIMITS.minWords}–${LIMITS.maxWords})` })
+
+  // Реплики персонажей
+  const lines = scenes.flatMap((s, i) => s.lines.filter((l) => !isNarrator(l.speaker)).map((l) => ({ ...l, n: num(s, i) })))
+  if (lines.length > LIMITS.characterLines) issues.push({ scenes: [...new Set(lines.map((l) => l.n))], text: `Реплик персонажей ${lines.length} (норма — не больше ${LIMITS.characterLines})` })
+  for (const l of lines) {
+    if (!isKnown(l.speaker)) issues.push({ scenes: [l.n], text: `Говорит «${l.speaker}» — нет в персонажах сезона, у него нет голоса` })
+    if (words(l.text) > LIMITS.lineWords) issues.push({ scenes: [l.n], text: `Реплика ${l.speaker} длиннее ${LIMITS.lineWords} слов` })
+  }
+
+  // Говорит без реплики — видео покажет рот без звука
+  scenes.forEach((s, i) => {
+    const desc = s.description.replace(/[А-ЯЁA-Z][^.!?«»:]*?\s+говорит\s*:\s*«[^»]*»/g, '')
+    if (/начинает говорить|губы\s+(шевел|повтор|двига)|произносит|шепчет|говорит(?!\s*:)/i.test(desc))
+      issues.push({ scenes: [num(s, i)], text: 'В описании персонаж говорит без реплики — видео покажет рот без звука' })
+  })
+
+  return { issues, narratorWords, seconds: Math.round(narratorWords / 2), characterLines: lines.length }
 }

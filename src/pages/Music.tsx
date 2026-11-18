@@ -120,7 +120,9 @@ function LocationMusic({ topicId, loc, activeId, onOpen }: { topicId: string; lo
   const files = distinct(loc.shots.map((s) => s.music_file)).filter(Boolean)
   const saved = texts.find(Boolean) ?? ''
   const [text, setText] = useState(saved)
-  useEffect(() => setText(saved), [saved])
+  useEffect(() => {
+    setText(saved)
+  }, [saved])
   const dirty = text.trim() !== saved || texts.length > 1
   const running = isRunning('music', ids[0])
   const total = loc.shots.reduce((a, s) => a + clipSec(s), 0)

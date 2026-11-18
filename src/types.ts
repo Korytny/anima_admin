@@ -125,6 +125,19 @@ export interface Agent {
   is_active: boolean | null
 }
 
+/** public.agent_prompt_versions — версия промпта агента (supabase/agent_prompt_versions.sql). agents.prompt = последняя. */
+export interface AgentPromptVersion {
+  id: number
+  agent_id: number
+  prompt: string
+  model: string | null
+  /** initial | file:<имя> | admin | rollback:<id> | assistant */
+  source: string
+  note: string | null
+  created_at: string
+  created_by: string | null
+}
+
 // ---- Ниже — сущности без таблиц в БД (пока демо, in-memory)
 
 export type LlmProvider = 'openai' | 'anthropic' | 'google' | 'openrouter'

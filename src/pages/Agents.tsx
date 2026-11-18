@@ -1,11 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
-import { Bot, Copy, CopyPlus, Plus, Search, Trash2 } from 'lucide-react'
-import type { Agent } from '@/types'
+import { Bot, ChevronRight, Sparkles, Copy, CopyPlus, History, Plus, RotateCcw, Search, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import type { Agent, AgentPromptVersion } from '@/types'
+import { api } from '@/api'
+import { PromptDiff } from '@/components/PromptDiff'
+import { useAssistant } from '@/components/Assistant'
 import { useData } from '@/store/data'
 import { useDraft } from '@/lib/useDraft'
-import { copyText, fmtDateTime, timeAgo } from '@/lib/utils'
+import { cn, copyText, fmtDateTime, timeAgo } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
@@ -177,9 +181,27 @@ export function AgentsPage() {
 
 function AgentBody({ agent, onDelete, onDuplicate }: { agent: Agent; onDelete: () => void; onDuplicate: () => void }) {
   const { updateAgent } = useData()
-  const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(agent, 'id', (patch) => updateAgent(agent.id, patch))
+  const assistant = useAssistant()
+  const [note, setNote] = useState('')
+  const [versionsTick, setVersionsTick] = useState(0)
+  // Правка промпта сначала пишется версией (source=admin), потом в agents.prompt
+  const save = async (patch: Partial<Agent>) => {
+    if (patch.prompt !== undefined && patch.prompt !== agent.prompt) {
+      try {
+        await api.addPromptVersion({ agent_id: agent.id, prompt: patch.prompt ?? '', model: patch.model ?? agent.model, source: 'admin', note: note.trim() || null })
+        setVersionsTick((t) => t + 1)
+      } catch (e) {
+        toast.warning('Версия промпта не записана — история не ведётся', { description: e instanceof Error ? e.message : String(e) })
+      }
+    }
+    const a = await updateAgent(agent.id, patch)
+    if (a) setNote('')
+    return a
+  }
+  const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(agent, 'id', save)
   if (!draft) return null
   const vars = promptVars(draft.prompt)
+  const promptDirty = dirtyKeys.has('prompt')
 
   return (
     <>
@@ -193,6 +215,7 @@ function AgentBody({ agent, onDelete, onDuplicate }: { agent: Agent; onDelete: (
           </div>
         )}
         <FieldGroups groups={GROUPS} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
+        <PromptVersions agent={agent} tick={versionsTick} locked={dirty} onRestored={() => setVersionsTick((t) => t + 1)} />
       </PanelScroll>
       <PanelFooter>
         {dirty ? (
@@ -203,9 +226,13 @@ function AgentBody({ agent, onDelete, onDuplicate }: { agent: Agent; onDelete: (
             <Button variant="ghost" onClick={reset}>
               Отмена
             </Button>
+            {promptDirty && <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Что изменили — для истории версий" className="min-w-0 flex-1" />}
           </>
         ) : (
           <>
+            <Button variant="outline" size="sm" title="Открыть ассистента с этим агентом" onClick={() => assistant.open({ agentId: agent.id, text: `Агент «${agent.name}»: ` })}>
+              <Sparkles /> Улучшить промпт
+            </Button>
             <Button variant="ghost" size="icon" title="Скопировать промпт" aria-label="Скопировать промпт" onClick={() => copyText(agent.prompt ?? '')}>
               <Copy />
             </Button>
@@ -219,5 +246,110 @@ function AgentBody({ agent, onDelete, onDuplicate }: { agent: Agent; onDelete: (
         )}
       </PanelFooter>
     </>
+  )
+}
+
+const SOURCE_LABEL = (s: string) =>
+  s === 'initial' ? 'исходная' : s === 'admin' ? 'админка' : s === 'assistant' ? 'ассистент' : s.startsWith('file:') ? s.slice(5) : s.startsWith('rollback:') ? `откат к v${s.slice(9)}` : s
+
+/** История промпта: agent_prompt_versions. Разница со текущим, откат = новая версия rollback:<id>. */
+function PromptVersions({ agent, tick, locked, onRestored }: { agent: Agent; tick: number; locked: boolean; onRestored: () => void }) {
+  const { updateAgent } = useData()
+  const [open, setOpen] = useState(false)
+  const [versions, setVersions] = useState<AgentPromptVersion[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [diffId, setDiffId] = useState<number | null>(null)
+  const [restore, setRestore] = useState<AgentPromptVersion | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      setVersions(await api.listPromptVersions(agent.id))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [agent.id])
+  useEffect(() => {
+    if (open) void load()
+  }, [open, load, tick, agent.prompt])
+
+  const current = versions?.find((v) => v.prompt === (agent.prompt ?? ''))?.id
+
+  return (
+    <div className="border-t border-border">
+      <button className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[13px] font-medium" onClick={() => setOpen((o) => !o)}>
+        <ChevronRight className={cn('size-4 text-fg-3 transition-transform', open && 'rotate-90')} />
+        <History className="size-4 text-fg-3" /> Версии промпта{versions && <span className="text-fg-3">· {versions.length}</span>}
+      </button>
+      {open && (
+        <div className="px-4 pb-4">
+          {error ? (
+            <div className="text-xs text-gold">
+              История недоступна: {error}. Нужно выполнить <span className="font-mono">supabase/agent_prompt_versions.sql</span>.
+            </div>
+          ) : !versions ? (
+            <div className="text-xs text-fg-3">Загрузка…</div>
+          ) : !versions.length ? (
+            <div className="text-xs text-fg-3">Версий пока нет — первая появится при следующем сохранении промпта.</div>
+          ) : (
+            <ul className="space-y-1">
+              {versions.map((v) => (
+                <li key={v.id} className="rounded-md border border-border/70">
+                  <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs">
+                    <span className="font-mono text-fg-2">v{v.id}</span>
+                    <span className="text-fg-3" title={fmtDateTime(v.created_at)}>
+                      {timeAgo(v.created_at)}
+                    </span>
+                    <span className="truncate rounded bg-raised px-1.5 font-mono text-[11px] text-fg-2">{SOURCE_LABEL(v.source)}</span>
+                    <span className="min-w-0 flex-1 truncate text-fg-2" title={v.note ?? undefined}>
+                      {v.note}
+                    </span>
+                    <span className="shrink-0 text-fg-3">{(v.prompt.length / 1000).toFixed(1)}k</span>
+                    {v.id === current ? (
+                      <Badge className="shrink-0">текущая</Badge>
+                    ) : (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => setDiffId((d) => (d === v.id ? null : v.id))}>
+                          Разница
+                        </Button>
+                        <Button variant="ghost" size="sm" disabled={locked} title={locked ? 'Сначала сохраните или отмените правку' : 'Сделать эту версию текущей'} onClick={() => setRestore(v)}>
+                          <RotateCcw /> Откатить
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {diffId === v.id && (
+                    <div className="border-t border-border/70 p-2">
+                      <div className="mb-1 text-[11px] text-fg-3">От v{v.id} к текущему: зелёное — добавлено потом, зачёркнутое — убрано</div>
+                      <div className="max-h-96 overflow-y-auto">
+                        <PromptDiff from={v.prompt} to={agent.prompt ?? ''} />
+                      </div>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!restore}
+        onOpenChange={(o) => !o && setRestore(null)}
+        title={`Откатить промпт к v${restore?.id}?`}
+        description="Текст этой версии станет текущим промптом агента. История сохранится: откат запишется новой версией."
+        onConfirm={async () => {
+          const v = restore
+          if (!v) return
+          try {
+            await api.addPromptVersion({ agent_id: agent.id, prompt: v.prompt, model: agent.model, source: `rollback:${v.id}`, note: `откат к v${v.id}` })
+          } catch (e) {
+            toast.error('Версия не записана — откат отменён', { description: e instanceof Error ? e.message : String(e) })
+            return
+          }
+          await updateAgent(agent.id, { prompt: v.prompt })
+          onRestored()
+        }}
+      />
+    </div>
   )
 }

@@ -137,3 +137,11 @@ export function colorFromString(s: string) {
   for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 360
   return `hsl(${h} 60% 55%)`
 }
+
+/** 1,2,3,5 → «1–3, 5» */
+export const ranges = (ns: number[]) =>
+  [...new Set(ns)]
+    .sort((a, b) => a - b)
+    .reduce<number[][]>((acc, n) => (acc.length && acc[acc.length - 1].at(-1)! + 1 === n ? acc[acc.length - 1].push(n) : acc.push([n]), acc), [])
+    .map((r) => (r.length > 1 ? `${r[0]}–${r[r.length - 1]}` : `${r[0]}`))
+    .join(', ')
