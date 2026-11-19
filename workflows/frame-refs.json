@@ -21,14 +21,14 @@
   },
   "7": {
     "inputs": {
-      "seed": 775515420451459,
-      "steps": 27,
+      "seed": 0,
+      "steps": 16,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
       "denoise": 1,
       "model": [
-        "59",
+        "64",
         0
       ],
       "positive": [
@@ -40,8 +40,8 @@
         1
       ],
       "latent_image": [
-        "17",
-        2
+        "66",
+        0
       ]
     },
     "class_type": "KSampler",
@@ -114,7 +114,7 @@
   },
   "54": {
     "inputs": {
-      "image": "image_flux3_klein_distilled_t2i_00001_.png [output]"
+      "image": "ref1.png [output]"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -146,7 +146,7 @@
   },
   "60": {
     "inputs": {
-      "image": "flux3_klein_int8_t2i_00001_.png [output]"
+      "image": "ref2.png [output]"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -155,7 +155,7 @@
   },
   "62": {
     "inputs": {
-      "text": "girl in image1 фив guy frim image3 on reception in hotel image0",
+      "text": "prompt",
       "clip": [
         "2",
         0
@@ -168,11 +168,36 @@
   },
   "63": {
     "inputs": {
-      "image": "flux_fill_inpaint_example_input_image.png"
+      "image": "ref3.png [output]"
     },
     "class_type": "LoadImage",
     "_meta": {
       "title": "#ref3"
+    }
+  },
+  "64": {
+    "inputs": {
+      "lora_name": "mhbh_style_klein3_v1_000001750.safetensors",
+      "strength_model": 0.42,
+      "model": [
+        "59",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "#lora"
+    }
+  },
+  "66": {
+    "inputs": {
+      "width": 768,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "#size"
     }
   }
 }

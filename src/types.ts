@@ -138,6 +138,14 @@ export interface AgentPromptVersion {
   created_by: string | null
 }
 
+/** public.process_settings — настройки процесса ComfyUI поверх шаблона (supabase/process_settings.sql). */
+export interface ProcessSettings {
+  /** «#метка.поле» → значение (размер, LoRA, шаги…) */
+  values?: Record<string, string | number | boolean>
+  /** Шаблон промпта: {{prompt}}, {{style}} */
+  prompt?: string
+}
+
 // ---- Ниже — сущности без таблиц в БД (пока демо, in-memory)
 
 export type LlmProvider = 'openai' | 'anthropic' | 'google' | 'openrouter'

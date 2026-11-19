@@ -1,61 +1,51 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// fill_workflow.js — n8n Code-узел (Mode: Run Once for All Items)
+// fill_workflow.js — n8n Code-узел (Mode: Run Once for All Items). ОДИН на все процессы ComfyUI.
 //
-// Заполняет процесс ComfyUI (API-формат) данными шота по МЕТКАМ — заголовкам узлов (Title в ComfyUI):
-//   #prompt  ← prompt из scene_refs.js (теги уже заменены на «the person from image N») + добавка стиля
-//   #ref1..3 ← ref_images из scene_refs.js; лишние #ref удаляются вместе со входом images.imageN
-//   #save    ← путь anima/<seasons.folder>/<topics.folder>/<scena 2 знака>-<shot_num> (считается здесь, из БД)
-//   #seed    ← случайный seed (у каждой генерации свой)
-//   #size    ← SIZE (если метка есть в процессе)
-// Договор меток — страница «Процессы» админки (src/lib/workflows.ts).
+// Собирает процесс для POST <ComfyUI>/prompt из трёх частей:
+//   1. Шаблон — workflows/<файл> (узел WORKFLOW_NODE: HTTP GET http://<админка>/compute/workflows/<файл>).
+//   2. Настройки процесса — строка public.process_settings (узел SETTINGS_NODE; страница «Процессы» админки):
+//        values: { "#size.width": 768, "#lora.strength_model": 0.42, "#seed.steps": 16, … } — постоянные значения
+//        prompt: "mhbh style, {{prompt}}, {{style}}" — шаблон промпта (пусто — просто {{prompt}})
+//   3. Переменные запуска — узел VARS_NODE (в каждом конвейере назовите его «Vars»; для кадра — n8n/frame_vars.js):
+//        prompt, refs[], output_prefix, style, seed?, …  а также любые «#метка.поле»: значение — подставятся как есть.
 //
-// Вход:
-//   узел REFS_NODE            — вывод scene_refs.js для ЭТОГО шота (prompt, ref_images, ref_count, scene_id)
-//   узел WORKFLOW_NODE        — процесс: HTTP Request GET http://<админка>/compute/workflows/<файл>
-//                               или Read Files from Disk + Extract from File (JSON) из папки workflows/ проекта;
-//                               файл: {{ $json.ref_count ? 'frame-refs.json' : 'frame-0ref.json' }}
-//   узлы SCENE_NODE / TOPIC_NODE / SEASON_NODE — строки scenes, topics, seasons из Supabase
-// Админка шлёт только scene_id и topic_id: путь, стиль и промпт собирает бэкенд (n8n).
-// Выход: { comfy_body: { prompt: <процесс> }, scene_id, output_prefix, save_node }
-//   comfy_body — тело для POST http://<ComfyUI>/prompt; save_node — id узла #save (нужен comfy_result.js)
+// По меткам (заголовок узла в ComfyUI, первое слово) заполняется само:
+//   #prompt  ← шаблон промпта с {{переменными}}
+//   #ref1..N ← refs[0..N-1]; лишние #ref удаляются вместе со входом, который на них ссылается
+//            (так же для любого списка: переменная «xs» → узлы #x1..#xN)
+//   #save    ← output_prefix
+//   #seed    ← seed или случайный
+// Скрипт ничего не знает о кадрах, видео или стилях — это задача узла переменных.
+// Выход: { comfy_body: { prompt: <процесс> }, save_node, output_prefix, prompt_text, …переменные без списков }
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Настройки ──────────────────────────────────────────────────────────────
-const REFS_NODE = 'Scene_refs'     // имя Code-узла со scene_refs.js
-const WORKFLOW_NODE = 'Workflow'   // имя узла, который скачал процесс
-const SCENE_NODE = 'Scene'         // Supabase: строка scenes
-const TOPIC_NODE = 'Topic'         // Supabase: строка topics (серия)
-const SEASON_NODE = 'Season'       // Supabase: строка seasons
-const SIZE = { width: 768, height: 1344 } // вертикаль 9:16; null — не трогать #size
-// Стили сезона (seasons.style → добавка к промпту). Рабочие значения живут здесь, в бэкенде;
-// в админке (lib/styles.ts) — только названия и превью для выбора.
-const STYLES = {
-  smooth3d: { trigger: '', promptSuffix: '3D animated feature film style, smooth stylized shading, soft global illumination, expressive faces' },
-  watercolor: { trigger: '', promptSuffix: 'hand-painted 2D anime film style, soft watercolor backgrounds, warm natural light, gentle colors' },
-  scifi: { trigger: '', promptSuffix: 'cinematic sci-fi fantasy CGI style, highly detailed costumes and armor, dramatic volumetric lighting' },
-  steampunk: { trigger: '', promptSuffix: 'painterly 3D style with hand-painted textures, steampunk details, brass and copper, moody rim lighting' },
-}
-// ───────────────────────────────────────────────────────────────────────────
+// Цепочка последовательная: Vars → Workflow → Process settings → Fill workflow; данные берутся по именам узлов.
+// Имена одинаковые во всех конвейерах — скрипт копируется без правок.
+const VARS_NODE = 'Vars'                  // переменные запуска (frame_vars.js и т.п.)
+const WORKFLOW_NODE = 'Workflow'          // шаблон процесса
+const SETTINGS_NODE = 'Process settings'  // Supabase: process_settings по имени файла (Settings → Always Output Data: вкл.)
 
-const PROMPT_FIELDS = ['text', 'prompt', 'value', 'string']
+const TEXT_FIELDS = ['text', 'prompt', 'value', 'string']
 const labelOf = (node) => String(node?._meta?.title ?? '').trim().split(/\s/)[0].toLowerCase()
+const render = (tpl, vars) =>
+  String(tpl)
+    .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => (vars[k] == null ? '' : Array.isArray(vars[k]) ? vars[k].join(', ') : String(vars[k])))
+    .replace(/\s*,\s*(,\s*)+/g, ', ') // пустые переменные не оставляют «, ,»
+    .replace(/^\s*,\s*|\s*,\s*$/g, '')
+    .trim()
 
 try {
-  // Данные шота — из узла scene_refs.js (на вход этому узлу обычно приходит процесс, а не шот)
-  const fromInput = $input.first().json
-  const refs = fromInput && 'ref_count' in fromInput ? fromInput : $(REFS_NODE).first().json
-  if (!refs || !('ref_count' in refs)) throw new Error(`Нет вывода scene_refs.js — проверьте имя узла (REFS_NODE = '${REFS_NODE}')`)
-  if (refs.error) throw new Error(`scene_refs.js: ${refs.error}`)
-  if (!String(refs.prompt ?? '').trim()) throw new Error('У шота пустой промпт (manual_prompt и visual_prompt) — сначала Постановщик')
-  const scene = $(SCENE_NODE).first().json
-  const topic = $(TOPIC_NODE).first().json
-  const season = $(SEASON_NODE).first().json ?? {}
-  if (!season.id) throw new Error(`В узле «${SEASON_NODE}» нет сезона — фильтр seasons.id = {{ $('${TOPIC_NODE}').first().json.season_id }}`)
-  // Путь кадра — та же схема, что в админке (lib/media.ts): anima/<сезон>/<серия>/<NN>-<шот>
-  const outputPrefix = `anima/${season.folder || topic.season_id || 'no-season'}/${topic.folder || topic.topic_id}/${String(scene.scena ?? 0).padStart(2, '0')}-${scene.shot_num ?? 1}`
-  // Процесс: HTTP-узел отдаёт его как item.json; «Extract from File» (JSON) — в поле data (объектом или строкой)
+  let vars
+  try {
+    vars = { ...$(VARS_NODE).first().json }
+  } catch {
+    throw new Error(`Нет узла «${VARS_NODE}» с переменными запуска — назовите так узел frame_vars.js`)
+  }
+  if (vars.error) throw new Error(`${VARS_NODE}: ${vars.error}`)
+
+  // 1. Шаблон: HTTP отдаёт его как json; «Extract from File» — в поле data (объектом или строкой)
   const raw = $(WORKFLOW_NODE).first().json
-  const src = raw.data !== undefined && !raw['1'] && !Object.values(raw).some((n) => n && n.class_type) ? raw.data : raw
+  const src = raw.data !== undefined && !Object.values(raw).some((n) => n && n.class_type) ? raw.data : raw
   const wf = JSON.parse(JSON.stringify(typeof src === 'string' ? JSON.parse(src) : src))
   if (!Object.values(wf).some((n) => n && n.class_type)) throw new Error(`В узле «${WORKFLOW_NODE}» не процесс ComfyUI в API-формате`)
 
@@ -65,49 +55,69 @@ try {
     if (found.length > 1) throw new Error(`Метка ${label} стоит на нескольких узлах`)
     return found[0] ?? null
   }
+  const setField = (key, value) => {
+    const [label, field] = key.split('.')
+    const node = one(label.toLowerCase())
+    if (!node) return // метки нет в этом процессе — настройка не про него
+    if (!field) throw new Error(`«${key}»: нужно «#метка.поле»`)
+    node[1].inputs[field] = value
+  }
 
-  // #prompt: триггер стиля + промпт + добавка стиля
-  const style = STYLES[season.style]
-  if (season.style && !style) throw new Error(`Стиль сезона «${season.style}» не найден в STYLES этого скрипта`)
-  const promptNode = one('#prompt')
-  if (!promptNode) throw new Error('В процессе нет узла #prompt')
-  const text = [style?.trigger, refs.prompt, style?.promptSuffix].filter((s) => s && String(s).trim()).join(', ')
-  const pf = PROMPT_FIELDS.find((f) => f in promptNode[1].inputs)
-  promptNode[1].inputs[pf] = text
+  // 2. Настройки процесса (необязательны)
+  let settings = {}
+  try {
+    const row = $(SETTINGS_NODE).first().json
+    settings = typeof row?.settings === 'string' ? JSON.parse(row.settings) : (row?.settings ?? {})
+  } catch {
+    /* узла нет или строка пустая — работаем по шаблону */
+  }
+  for (const [k, v] of Object.entries(settings.values ?? {})) setField(k, v)
 
-  // #ref1..#ref3: подставить картинки; лишние удалить вместе с входом, который на них ссылается
-  const images = refs.ref_images ?? []
-  for (let i = 1; i <= 9; i++) {
-    const ref = one(`#ref${i}`)
-    if (!ref) continue
-    const [id, node] = ref
-    if (i <= images.length) {
-      node.inputs.image = images[i - 1]
-    } else {
-      delete wf[id]
-      for (const n of Object.values(wf)) for (const [k, v] of Object.entries(n.inputs ?? {})) if (Array.isArray(v) && v[0] === id) delete n.inputs[k]
+  // 3. Переменные «#метка.поле» — как есть
+  for (const [k, v] of Object.entries(vars)) if (k.startsWith('#')) setField(k, v)
+
+  // Списки: переменная «refs» → узлы #ref1..#refN; лишние удаляем вместе со входами
+  const prefixes = new Set(Object.values(wf).map(labelOf).map((l) => /^#([a-z_]+)\d+$/.exec(l)?.[1]).filter(Boolean))
+  for (const p of prefixes) {
+    const list = vars[`${p}s`] ?? vars[p]
+    if (list != null && !Array.isArray(list)) throw new Error(`Переменная ${p}s должна быть списком`)
+    const items = list ?? []
+    const nodes = Object.entries(wf).filter(([, n]) => new RegExp(`^#${p}\\d+$`).test(labelOf(n)))
+    if (items.length > nodes.length) throw new Error(`${p}s: значений ${items.length}, а узлов #${p}N в процессе ${nodes.length}`)
+    for (const [id, node] of nodes) {
+      const i = +labelOf(node).slice(p.length + 1)
+      if (i <= items.length) {
+        const field = 'image' in node.inputs ? 'image' : Object.keys(node.inputs).find((f) => !Array.isArray(node.inputs[f]))
+        node.inputs[field] = items[i - 1]
+      } else {
+        delete wf[id]
+        for (const n of Object.values(wf)) for (const [k, v] of Object.entries(n.inputs ?? {})) if (Array.isArray(v) && v[0] === id) delete n.inputs[k]
+      }
     }
   }
-  if (images.length > byLabel('#ref1').length + byLabel('#ref2').length + byLabel('#ref3').length)
-    throw new Error(`Референсов ${images.length}, а узлов #ref в процессе меньше`)
+
+  // #prompt
+  let promptText = null
+  const pn = one('#prompt')
+  if (pn) {
+    if (!String(vars.prompt ?? '').trim()) throw new Error('Пустой prompt в переменных')
+    promptText = render(settings.prompt?.trim() || '{{prompt}}', vars)
+    pn[1].inputs[TEXT_FIELDS.find((f) => f in pn[1].inputs) ?? 'text'] = promptText
+  }
 
   // #save
   const save = one('#save')
-  if (!save) throw new Error('В процессе нет узла #save')
-  save[1].inputs.filename_prefix = outputPrefix
-
-  // #seed — случайный
-  const seed = one('#seed')
-  if (seed) {
-    const f = 'noise_seed' in seed[1].inputs ? 'noise_seed' : 'seed'
-    seed[1].inputs[f] = Math.floor(Math.random() * 2 ** 48)
+  if (save) {
+    if (!vars.output_prefix) throw new Error('Нет output_prefix в переменных')
+    save[1].inputs.filename_prefix = vars.output_prefix
   }
 
-  // #size
-  const size = one('#size')
-  if (size && SIZE) Object.assign(size[1].inputs, SIZE)
+  // #seed
+  const seed = one('#seed')
+  if (seed) seed[1].inputs['noise_seed' in seed[1].inputs ? 'noise_seed' : 'seed'] = vars.seed ?? Math.floor(Math.random() * 2 ** 48)
 
-  return [{ json: { comfy_body: { prompt: wf }, scene_id: refs.scene_id, output_prefix: outputPrefix, save_node: save[0], prompt_text: text, season_id: season.id, season_folder: season.folder ?? null, style_id: season.style ?? null } }]
+  const plain = Object.fromEntries(Object.entries(vars).filter(([k, v]) => !Array.isArray(v) && !k.startsWith('#')))
+  return [{ json: { ...plain, comfy_body: { prompt: wf }, save_node: save?.[0] ?? null, prompt_text: promptText } }]
 } catch (error) {
   return [{ json: { error: error.message } }]
 }

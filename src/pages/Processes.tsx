@@ -4,6 +4,7 @@ import { getWorkflows } from '@/api/compute'
 import { LABELS, SLOTS, analyzeWorkflow, type Slot, type WorkflowFile, type WorkflowReport } from '@/lib/workflows'
 import { cn, fmtBytes, timeAgo } from '@/lib/utils'
 import { Button } from '@/components/ui'
+import { ProcessSettingsEditor } from '@/components/ProcessSettingsEditor'
 
 /** Процессы ComfyUI конвейера: что лежит в workflows/, все ли метки на месте, какие модели нужны.
  *  n8n подставляет данные по меткам (заголовкам узлов), см. lib/workflows.ts. */
@@ -192,8 +193,17 @@ function SlotRow({ slot, file, loading }: { slot?: Slot; file?: WorkflowFile; lo
         {report && <ChevronRight className={cn('size-4 shrink-0 text-fg-3 transition-transform', open && 'rotate-90')} />}
       </button>
       {open && report && (
-        <div className="border-t border-border p-4">
-          <Report report={report} />
+        <div className="space-y-4 border-t border-border p-4">
+          {!!file?.json && !report.fatal && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold tracking-wide text-fg-3 uppercase">Настройки</h3>
+              <ProcessSettingsEditor file={file.name} workflow={file.json} />
+            </section>
+          )}
+          <section>
+            <h3 className="mb-2 text-xs font-semibold tracking-wide text-fg-3 uppercase">Метки</h3>
+            <Report report={report} />
+          </section>
         </div>
       )}
     </div>

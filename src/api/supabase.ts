@@ -1,6 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import type { Agent, AgentPromptVersion, Season, Character, Scene, Topic } from '@/types'
+import type { Agent, AgentPromptVersion, ProcessSettings, Season, Character, Scene, Topic } from '@/types'
 
 const PAGE = 1000
 
@@ -113,6 +113,16 @@ export const supabaseData = {
 
   async updateAgent(id: number, patch: Partial<Agent>) {
     return check(await supabase.from('agents').update(patch).eq('id', id).select().single()) as Agent
+  },
+
+  // Настройки процессов ComfyUI: supabase/process_settings.sql
+  async listProcessSettings() {
+    const rows = check(await supabase.from('process_settings').select('file, settings')) as { file: string; settings: ProcessSettings }[]
+    return Object.fromEntries(rows.map((r) => [r.file, r.settings ?? {}]))
+  },
+
+  async saveProcessSettings(file: string, settings: ProcessSettings) {
+    check(await supabase.from('process_settings').upsert({ file, settings, updated_at: new Date().toISOString() }).select().single())
   },
 
   // История промптов: supabase/agent_prompt_versions.sql
