@@ -8,6 +8,11 @@ import { extname, join, resolve, sep } from 'node:path'
 import { parseServers, serverStats } from './server/comfy'
 import { listWorkflows, readWorkflow } from './server/workflows'
 import { assistantHandler } from './server/assistant'
+import { runDiagnostics } from './server/diagnostics'
+import { setDefaultResultOrder } from 'node:dns'
+
+// Сначала IPv4: на Windows-сервере без маршрута IPv6 запросы Node к Supabase/OpenAI иначе через раз висят до таймаута
+setDefaultResultOrder('ipv4first')
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
@@ -100,7 +105,7 @@ function mediaDir(dir: string | undefined): Plugin {
  *  GET  /compute/servers              → свои серверы (COMPUTE_SERVERS), GET /compute/servers/:id/stats → статус и статистика ComfyUI
  *  GET  /compute/pods                 → { pods, balance, spendPerHr }
  *  POST /compute/pods/:id/start|stop  → { ok }                                                                  */
-function runpodApi(key: string | undefined, supabaseUrl: string | undefined, anonKey: string | undefined, servers: ReturnType<typeof parseServers>): Plugin {
+function runpodApi(key: string | undefined, supabaseUrl: string | undefined, anonKey: string | undefined, servers: ReturnType<typeof parseServers>, env: Record<string, string>): Plugin {
   const gql = async (query: string) => {
     const r = await fetch('https://api.runpod.io/graphql', {
       method: 'POST',
@@ -136,6 +141,8 @@ function runpodApi(key: string | undefined, supabaseUrl: string | undefined, ano
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
         return res.end(raw)
       }
+      // Диагностика сервера админки: сеть до Supabase (IPv4/IPv6), n8n и вебхуки, ComfyUI, OpenAI. Только чтение, без входа
+      if (req.method === 'GET' && url === '/diagnostics') return send(res, 200, await runDiagnostics(env))
       // Свои серверы с ComfyUI (COMPUTE_SERVERS) — только чтение, без проверки входа: ComfyUI и так открыт в локальной сети
       if (req.method === 'GET' && url === '/servers') return send(res, 200, servers)
       const sm = /^\/servers\/([^/]+)\/stats$/.exec(url)
@@ -216,7 +223,7 @@ function assistantApi(openaiKey: string | undefined, supabaseUrl: string | undef
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
-    plugins: [react(), tailwindcss(), mediaDir(env.MEDIA_DIR), runpodApi(env.RUNPOD_API_KEY, env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY, parseServers(env.COMPUTE_SERVERS, env.VITE_COMFY_URL)), assistantApi(env.OPENAI_API_KEY, env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)],
+    plugins: [react(), tailwindcss(), mediaDir(env.MEDIA_DIR), runpodApi(env.RUNPOD_API_KEY, env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY, parseServers(env.COMPUTE_SERVERS, env.VITE_COMFY_URL), env), assistantApi(env.OPENAI_API_KEY, env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)],
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       // абсолютный путь к ComfyUI/output на сервере; по умолчанию = MEDIA_DIR

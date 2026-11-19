@@ -43,3 +43,13 @@ import type { ComputeServer, ServerStats } from '../../server/comfy'
 export const getWorkflows = () => call<import('@/lib/workflows').WorkflowFile[]>('/workflows')
 export const getServers = () => call<ComputeServer[]>('/servers')
 export const getServerStats = (id: string) => call<ServerStats>(`/servers/${id}/stats`)
+
+// Диагностика сервера админки (server/diagnostics.ts): сеть до Supabase, n8n и вебхуки, ComfyUI, OpenAI
+export interface DiagCheck {
+  group: string
+  name: string
+  status: 'ok' | 'warn' | 'fail' | 'info'
+  detail: string
+  advice?: string
+}
+export const getDiagnostics = () => call<{ host: string; checks: DiagCheck[] }>('/diagnostics')

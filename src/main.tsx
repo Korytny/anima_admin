@@ -16,6 +16,7 @@ import { AnimationPage } from '@/pages/Animation'
 import { MontagePage } from '@/pages/Montage'
 import { MusicPage } from '@/pages/Music'
 import { ComputePage } from '@/pages/Compute'
+import { DiagnosticsPage } from '@/pages/Diagnostics'
 import { StylesPage } from '@/pages/Styles'
 import { ProcessesPage } from '@/pages/Processes'
 import { ScriptPage } from '@/pages/Script'
@@ -47,6 +48,7 @@ const router = createBrowserRouter([
       { path: 'agents', element: <AgentsPage /> },
       { path: 'processes', element: <ProcessesPage /> },
       { path: 'compute', element: <ComputePage /> },
+      { path: 'diagnostics', element: <DiagnosticsPage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/topics" replace /> },
     ],
