@@ -6,6 +6,10 @@ import { copyText } from '@/lib/utils'
 export function PathHint({ expected, value, onChange }: { expected: string; value: unknown; onChange: (v: unknown) => void }) {
   const v = typeof value === 'string' ? value.trim() : ''
   const rel = v && !/^https?:/.test(v) ? toRelative(v) : v
+  // ComfyUI дописывает к имени счётчик: 01-1.png → 01-1_00001_.png (каждая перегенерация — новый файл). Это тот же путь по схеме
+  const dot = expected.lastIndexOf('.')
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const matches = v === expected || (dot > 0 && new RegExp(`^${esc(expected.slice(0, dot))}_\\d+_${esc(expected.slice(dot))}$`).test(v))
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-3">
       {v && rel !== v ? (
@@ -16,7 +20,7 @@ export function PathHint({ expected, value, onChange }: { expected: string; valu
             <CornerDownLeft className="size-3" /> заменить
           </button>
         </>
-      ) : v === expected ? null : (
+      ) : matches ? null : (
         <>
           <span>{v ? 'По схеме:' : 'Положить файл в:'}</span>
           <code className="font-mono text-fg-2 select-all">{expected}</code>

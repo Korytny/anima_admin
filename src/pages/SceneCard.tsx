@@ -1,16 +1,17 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { AudioLines, Clapperboard, Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import type { Character, Scene, Season, Topic } from '@/types'
 import { useNavigate } from 'react-router-dom'
 import { GENERATING, characterImages, characterTitle, sceneCharacters, seasonCharacters, useData } from '@/store/data'
 import { audioConfigured, pipelineConfigured, videoConfigured } from '@/api/pipeline'
-import { absPath, mediaUrl, scenePath } from '@/lib/media'
+import { absPath, mediaUrl, outputPrefix, scenePath } from '@/lib/media'
+import { listVariants, variantPrefix, type Variant } from '@/api/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
 import { SCENE_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { useCardLayout } from '@/lib/useCardLayout'
-import { copyText, fmtDateTime } from '@/lib/utils'
+import { cn, copyText, fmtDateTime } from '@/lib/utils'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
@@ -159,12 +160,24 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const season = seasons.find((x) => x.id === topic?.season_id)
   const codeGroups = useMemo(() => (draft ? groups(draft, topic, season) : []), [draft, topic, season])
   const layout = useCardLayout('card:scene', codeGroups, draft)
+  // Варианты кадра на диске (каждая перегенерация — новый файл рядом); основной — тот, что в base_image_url
+  const [variants, setVariants] = useState<Variant[]>([])
+  const [variant, setVariant] = useState<string | null>(null) // выбранный для просмотра; null — показываем основной
+  const prefix = scene.base_image_url ? variantPrefix(scene.base_image_url) : outputPrefix(scene, topic, season)
+  useEffect(() => {
+    let alive = true
+    void listVariants(prefix).then((v) => alive && setVariants(v))
+    return () => {
+      alive = false
+    }
+  }, [prefix, scene.base_image_url, scene.updated_at])
   if (!draft) return null
 
   // Сначала кадр сцены, потом референсы персонажей. Нет кадра — большое окно пустое, пока не выбран референс
   const frames = [scene.base_image_url, scene.event_img].filter((x): x is string => !!x)
   const images = [...frames, ...(scene.char_img_url ?? []).filter(Boolean)]
-  const mainSrc = img != null ? images[img] : frames[0]
+  const mainSrc = variant ?? (img != null ? images[img] : frames[0])
+  const isMain = (p: string) => !!scene.base_image_url && variantPrefix(p) === variantPrefix(scene.base_image_url) && p.split('/').pop() === scene.base_image_url.split('/').pop()
   const applyKeys = [...dirtyKeys].filter((k) => !NO_BULK.has(k))
   const generating = scene.status === GENERATING
 
@@ -172,8 +185,9 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const generate = async () => {
     if (dirty && !(await submit())) return
     setImg(null)
+    setVariant(null)
     setMedia('image')
-    await generateSceneImages([{ ...scene, ...draft }], topics, characters)
+    await generateSceneImages([{ ...scene, ...draft }])
   }
   const generateBtn = (
     <Button
@@ -223,7 +237,10 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
                     <Fragment key={p + i}>
                       {i === frames.length && <span className="shrink-0 pl-1 text-[11px] text-fg-3">Референсы:</span>}
                       <button
-                        onClick={() => setImg(i)}
+                        onClick={() => {
+                          setImg(i)
+                          setVariant(null)
+                        }}
                         title={i < frames.length ? 'Кадр сцены' : 'Референс персонажа'}
                         className={`shrink-0 rounded ring-2 ${(img ?? (frames.length ? 0 : -1)) === i ? 'ring-accent' : 'ring-transparent'}`}
                       >
@@ -233,6 +250,43 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
                   ))}
                 </div>
               ) : null}
+              {variants.length > 1 && (
+                <div>
+                  <div className="mb-1 flex items-center gap-2 text-[11px] text-fg-3">
+                    Варианты кадра · {variants.length}
+                    {variant && !isMain(variant) && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="ml-auto"
+                        onClick={async () => {
+                          const s = await updateScene(scene.scene_id, { base_image_url: variant })
+                          if (s) setVariant(null)
+                        }}
+                      >
+                        Сделать основным
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {variants.map((v) => {
+                      const main = isMain(v.path)
+                      const shown = variant ? variant === v.path : main
+                      return (
+                        <button
+                          key={v.path}
+                          onClick={() => setVariant(main ? null : v.path)}
+                          title={`${v.path.split('/').pop()}${main ? ' — основной' : ''}`}
+                          className={cn('relative shrink-0 rounded ring-2', shown ? 'ring-accent' : 'ring-transparent')}
+                        >
+                          <Thumb src={v.path} className="h-16 w-9" />
+                          {main && <span className="absolute right-0 bottom-0 left-0 rounded-b bg-success/80 text-center text-[9px] leading-tight text-bg">основной</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
           {(cast.length > 0 || missing.length > 0) && (

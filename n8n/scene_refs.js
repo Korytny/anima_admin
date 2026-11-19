@@ -21,6 +21,7 @@
 
 // ── Настройки ──────────────────────────────────────────────────────────────
 const CHARACTERS_NODE = 'Characters'   // имя узла с персонажами сезона
+const SCENE_NODE = 'Scene'             // имя узла со строкой scenes (если на вход пришёл не шот)
 const MAX_REFS = 3                     // сколько #ref в процессе frame-refs.json
 const LOCAL_SERVER = true              // ComfyUI видит папку output, где лежат персонажи
 const STYLE_TRIGGER = ''               // триггер стиля в начало промпта, напр. 'mhbh style' (пусто — без него)
@@ -58,7 +59,21 @@ try {
     if (c?.name) byName.set(norm(c.name), c)
   }
 
-  const out = $input.all().map(({ json: scene }) => {
+  // Шоты: со входа, а если на вход пришло другое (персонажи, вебхук) — из узла SCENE_NODE
+  const isScene = (j) => j && typeof j === 'object' && 'scene_id' in j
+  let sceneItems = $input.all().filter((i) => isScene(i.json))
+  if (!sceneItems.length) {
+    try {
+      sceneItems = $(SCENE_NODE).all().filter((i) => isScene(i.json))
+    } catch {
+      /* узла нет — ниже понятная ошибка */
+    }
+  }
+  if (!sceneItems.length)
+    throw new Error(`Нет шота: на вход и в узле «${SCENE_NODE}» нет строки scenes (поле scene_id). Проверьте, что узел Scene нашёл шот по scene_id из вебхука`)
+  if (!byName.size) throw new Error(`Нет персонажей сезона в узле «${CHARACTERS_NODE}» — проверьте фильтр characters.season = topics.season_id`)
+
+  const out = sceneItems.map(({ json: scene }) => {
     const tags = [...new Set(asList(scene.character).map((t) => t))] // порядок как в сцене, без повторов
     const refs = [] // { tag, image }
     const missing = [] // теги без записи или без картинки

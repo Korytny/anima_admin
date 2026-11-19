@@ -232,7 +232,7 @@ function useDataStore() {
       },
 
       /** Ставит сцены в 'generating' и дергает вебхук n8n по каждой. Ошибка запуска → 'error'. */
-      async generateSceneImages(scenes: Scene[], topics: Topic[], characters: Character[]) {
+      async generateSceneImages(scenes: Scene[]) {
         if (!scenes.length) return
         const ids = scenes.map((s) => s.scene_id)
         const marked = await run(api.updateScenes(ids, { status: GENERATING }))
@@ -241,11 +241,7 @@ function useDataStore() {
         setState((s) => ({ ...s, scenes: s.scenes.map((x) => map.get(x.scene_id) ?? x) }))
 
         const results = await Promise.allSettled(
-          scenes.map((sc) => {
-            const t = topics.find((x) => x.topic_id === sc.topic)
-            const season = stateRef.current.seasons.find((x) => x.id === t?.season_id)
-            return requestSceneImage(sc, t, season, sceneCharacters(sc, seasonCharacters(t?.season_id, characters)))
-          }),
+          scenes.map((sc) => requestSceneImage(sc)),
         )
         const failed = ids.filter((_, i) => results[i].status === 'rejected')
         if (failed.length) {

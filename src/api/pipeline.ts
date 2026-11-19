@@ -1,40 +1,37 @@
 // Запуск генераций в n8n через вебхук.
 // n8n сам пишет результат в БД (service_role): base_image_url = путь, status = 'ready' | 'error'.
-import type { Character, Scene, Season, Topic } from '@/types'
-import { outputPrefix } from '@/lib/media'
-import { styleById } from '@/lib/styles'
+import type { Scene } from '@/types'
 import { supabase } from '@/lib/supabase'
 
-const IMAGE_WEBHOOK = import.meta.env.VITE_N8N_IMAGE_WEBHOOK as string | undefined
+// В .env.local у каждого шага — только id вебхука n8n; режим VITE_N8N_MODE: test → /webhook-test/<id>, prod → /webhook/<id>.
+// Запросы идут через dev-прокси /n8n → N8N_URL. Полный URL или путь (/n8n/…) в переменной тоже понимается.
+export const n8nMode: 'test' | 'prod' = import.meta.env.VITE_N8N_MODE === 'test' ? 'test' : 'prod'
+const hook = (v: string | undefined) => {
+  const id = v?.trim()
+  if (!id) return undefined
+  return /^(https?:\/\/|\/)/.test(id) ? id : `/n8n/${n8nMode === 'test' ? 'webhook-test' : 'webhook'}/${id}`
+}
+
+const IMAGE_WEBHOOK = hook(import.meta.env.VITE_N8N_IMAGE_WEBHOOK)
 
 export const pipelineConfigured = !!IMAGE_WEBHOOK
 
-export async function requestSceneImage(scene: Scene, topic: Topic | undefined, season: Season | undefined, characters: Character[]) {
+// Кадр шота: админка шлёт только id. Шот, серию, сезон, персонажей, промпт, путь и стиль n8n берёт и считает сам
+// (n8n/scene_refs.js, n8n/fill_workflow.js) — логика генерации живёт в бэкенде.
+export async function requestSceneImage(scene: Scene) {
   if (!IMAGE_WEBHOOK) throw new Error('Не задан VITE_N8N_IMAGE_WEBHOOK в .env.local')
   const { data } = await supabase.auth.getUser()
   const res = await fetch(IMAGE_WEBHOOK, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'scene_image',
-      scene_id: scene.scene_id,
-      topic_id: scene.topic,
-      folder: topic?.folder ?? null,
-      output_prefix: outputPrefix(scene, topic, season), // anima/<сезон>/<серия>/<код>
-      prompt: scene.manual_prompt || scene.visual_prompt, // ручной приоритетнее
-      visual_style: topic?.visual_style ?? null,
-      style: styleById(season?.style) ?? null, // стиль сезона: { id, lora, strength, trigger, promptSuffix, … } — n8n подставляет LoRA
-      requested_by: data.user?.email ?? null,
-      scene,
-      characters, // записи characters этой сцены (картинки: base_img / pers_file / filename)
-    }),
+    body: JSON.stringify({ action: 'scene_image', scene_id: scene.scene_id, topic_id: scene.topic, requested_by: data.user?.email ?? null }),
   })
   if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
 // Сценарий серии: админка шлёт только topic_id. Всё остальное (сезон, библия, биты, первоисточник, персонажи,
 // промпт агента) n8n сам берёт из БД и пишет ответ в topics.script_scenas.
-const SCRIPT_WEBHOOK = import.meta.env.VITE_N8N_SCRIPT_WEBHOOK as string | undefined
+const SCRIPT_WEBHOOK = hook(import.meta.env.VITE_N8N_SCRIPT_WEBHOOK)
 
 export const scriptPipelineConfigured = !!SCRIPT_WEBHOOK
 
@@ -51,9 +48,9 @@ export async function requestEpisodeScript(topicId: string) {
 // Озвучка, видео шота и монтаж серии: админка шлёт только id. n8n сам берёт данные из БД
 // и пишет результат в scenes.audio_file / audio_duration, scenes.video_file / video_sub, topics.url_final
 // (музыка по локации накладывается при монтаже).
-const AUDIO_WEBHOOK = import.meta.env.VITE_N8N_AUDIO_WEBHOOK as string | undefined
-const VIDEO_WEBHOOK = import.meta.env.VITE_N8N_VIDEO_WEBHOOK as string | undefined
-const MONTAGE_WEBHOOK = import.meta.env.VITE_N8N_MONTAGE_WEBHOOK as string | undefined
+const AUDIO_WEBHOOK = hook(import.meta.env.VITE_N8N_AUDIO_WEBHOOK)
+const VIDEO_WEBHOOK = hook(import.meta.env.VITE_N8N_VIDEO_WEBHOOK)
+const MONTAGE_WEBHOOK = hook(import.meta.env.VITE_N8N_MONTAGE_WEBHOOK)
 
 export const audioConfigured = !!AUDIO_WEBHOOK
 export const videoConfigured = !!VIDEO_WEBHOOK
@@ -70,7 +67,17 @@ export const requestSceneVideo = (sceneId: string) => post(VIDEO_WEBHOOK, 'VITE_
 export const requestMontage = (topicId: string) => post(MONTAGE_WEBHOOK, 'VITE_N8N_MONTAGE_WEBHOOK', { action: 'episode_montage', topic_id: topicId })
 
 // Музыка локации (Suno через n8n): шлём серию, номер локации и её шоты; n8n пишет scenes.music_file во все эти шоты.
-const MUSIC_WEBHOOK = import.meta.env.VITE_N8N_MUSIC_WEBHOOK as string | undefined
+const MUSIC_WEBHOOK = hook(import.meta.env.VITE_N8N_MUSIC_WEBHOOK)
 export const musicConfigured = !!MUSIC_WEBHOOK
 export const requestLocationMusic = (topicId: string, locationNum: number | null, sceneIds: string[]) =>
   post(MUSIC_WEBHOOK, 'VITE_N8N_MUSIC_WEBHOOK', { action: 'location_music', topic_id: topicId, location_num: locationNum, scene_ids: sceneIds })
+
+/** Все вебхуки конвейера — для страницы настроек и подсказок. Значения id не показываем. */
+export const WEBHOOKS = [
+  { step: 'Кадр шота', env: 'VITE_N8N_IMAGE_WEBHOOK', on: !!IMAGE_WEBHOOK, body: "{action:'scene_image', scene_id, topic_id}", writes: 'scenes.base_image_url, char_img_url, status' },
+  { step: 'Сценарий серии', env: 'VITE_N8N_SCRIPT_WEBHOOK', on: !!SCRIPT_WEBHOOK, body: "{action:'episode_script', topic_id}", writes: 'topics.script_scenas' },
+  { step: 'Озвучка шота', env: 'VITE_N8N_AUDIO_WEBHOOK', on: !!AUDIO_WEBHOOK, body: "{action:'scene_audio', scene_id}", writes: 'scenes.audio_file, audio_duration' },
+  { step: 'Видео шота', env: 'VITE_N8N_VIDEO_WEBHOOK', on: !!VIDEO_WEBHOOK, body: "{action:'scene_video', scene_id}", writes: 'scenes.video_file, video_sub' },
+  { step: 'Музыка локации', env: 'VITE_N8N_MUSIC_WEBHOOK', on: !!MUSIC_WEBHOOK, body: "{action:'location_music', topic_id, location_num, scene_ids}", writes: 'scenes.music_file' },
+  { step: 'Монтаж серии', env: 'VITE_N8N_MONTAGE_WEBHOOK', on: !!MONTAGE_WEBHOOK, body: "{action:'episode_montage', topic_id}", writes: 'topics.url_final' },
+]

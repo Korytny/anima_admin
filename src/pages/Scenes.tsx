@@ -355,15 +355,21 @@ function TopicScenes({ topicId }: { topicId: string }) {
               {selectedIds.length > 0 && (
                 <Button
                   variant="outline"
-                  disabled={!pipelineConfigured}
-                  title={pipelineConfigured ? 'Запустить генерацию кадра в n8n' : 'Не задан VITE_N8N_IMAGE_WEBHOOK'}
+                  disabled={!pipelineConfigured || selectedIds.length > 1}
+                  title={
+                    !pipelineConfigured
+                      ? 'Не задан VITE_N8N_IMAGE_WEBHOOK'
+                      : selectedIds.length > 1
+                        ? 'Пока кадры генерируются по одному: выберите один шот или откройте его карточку. Массовая генерация — позже (очередь в n8n)'
+                        : 'Запустить генерацию кадра в n8n'
+                  }
                   onClick={() => {
                     const ids = new Set(selectedIds)
-                    void generateSceneImages(allScenes.filter((s) => ids.has(s.scene_id)), topics, allCharacters)
+                    void generateSceneImages(allScenes.filter((s) => ids.has(s.scene_id)))
                     setSelection({})
                   }}
                 >
-                  <Sparkles /> Сгенерировать фото ({selectedIds.length})
+                  <Sparkles /> Сгенерировать фото{selectedIds.length > 1 ? ` (${selectedIds.length})` : ''}
                 </Button>
               )}
               {selectedIds.length > 0 && (

@@ -2,9 +2,9 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
-import { extname, resolve, sep } from 'node:path'
+import { extname, join, resolve, sep } from 'node:path'
 import { parseServers, serverStats } from './server/comfy'
 import { listWorkflows, readWorkflow } from './server/workflows'
 import { assistantHandler } from './server/assistant'
@@ -37,6 +37,32 @@ function mediaDir(dir: string | undefined): Plugin {
         res.statusCode = 404
         res.end(`not found: ${file}`)
       }
+      // Варианты кадра шота: ComfyUI кладёт каждую перегенерацию рядом — 01-1_00001_.png, 01-1_00002_.png…
+      // GET /media-api/variants?prefix=anima/karna/<серия>/01-1 → [{ path, mtime }] от новых к старым. Только чтение.
+      server.middlewares.use('/media-api/variants', (req, res) => {
+        const send = (status: number, body: unknown) => {
+          res.statusCode = status
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(body))
+        }
+        const prefix = new URL(req.url ?? '/', 'http://x').searchParams.get('prefix')?.replace(/\\/g, '/').replace(/^\/+/, '') ?? ''
+        const slash = prefix.lastIndexOf('/')
+        if (!prefix || slash < 0) return send(400, { error: 'Нужен prefix вида anima/<сезон>/<серия>/<код>' })
+        const folder = resolve(root, prefix.slice(0, slash))
+        if (!folder.startsWith(root + sep)) return send(400, { error: 'Вне MEDIA_DIR' })
+        const base = prefix.slice(slash + 1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const re = new RegExp(`^${base}(_\\d+_)?\\.(png|jpe?g|webp)$`, 'i')
+        let names: string[] = []
+        try {
+          names = readdirSync(folder).filter((n) => re.test(n))
+        } catch {
+          return send(200, [])
+        }
+        const files = names
+          .map((n) => ({ path: `${prefix.slice(0, slash)}/${n}`, mtime: statSync(join(folder, n)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime)
+        send(200, files)
+      })
       server.middlewares.use('/media', (req, res, next) => {
         const file = resolve(root, '.' + decodeURIComponent((req.url ?? '/').split('?')[0]))
         if (!file.startsWith(root + sep)) return miss(res, req.url ?? '', file, 'вне MEDIA_DIR')
