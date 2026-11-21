@@ -71,7 +71,7 @@ export function TasksPage() {
             </div>
           )}
           {list.length ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
               {list.map((t) => (
                 <TaskTile key={t.id} task={t} active={t.id === activeId} onClick={() => open(t.id === activeId ? null : t.id)} />
               ))}
@@ -93,17 +93,19 @@ function TaskTile({ task, active, onClick }: { task: Task; active: boolean; onCl
   const target = taskTarget(task, d)
   const st = taskStatus(task.status)
   return (
-    <button onClick={onClick} className={cn('overflow-hidden rounded-lg border bg-surface text-left transition-colors hover:border-fg-3', active ? 'border-accent' : 'border-border')}>
-      <div className="relative aspect-video bg-raised">
-        {target?.image ? <Thumb src={target.image} className="size-full rounded-none object-cover" /> : <div className="flex size-full items-center justify-center text-fg-3"><ListTodo className="size-6" /></div>}
-        <span className="absolute top-2 left-2 rounded px-1.5 py-0.5 text-[11px] font-medium text-white" style={{ background: st.color }}>
-          {st.label}
-        </span>
-      </div>
-      <div className="space-y-1 p-3">
+    <button onClick={onClick} className={cn('flex gap-3 rounded-lg border bg-surface p-3 text-left transition-colors hover:border-fg-3', active ? 'border-accent' : 'border-border')}>
+      {/* Картинка — второстепенна: маленькая и только если есть */}
+      {target?.image && <Thumb src={target.image} className="aspect-[3/4] w-14 shrink-0 rounded bg-bg object-contain" />}
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-center gap-2">
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-white" style={{ background: st.color }}>
+            {st.label}
+          </span>
+          {target && <span className="truncate text-[11px] text-accent-hover">{target.label}</span>}
+        </div>
         <div className="line-clamp-2 text-[13px] font-medium">{task.title}</div>
         {task.description && <div className="line-clamp-2 text-xs text-fg-3">{task.description}</div>}
-        <div className="flex items-center gap-2 pt-1 text-[11px] text-fg-3">
+        <div className="flex items-center gap-2 pt-0.5 text-[11px] text-fg-3">
           <Avatar name={memberName(d.team, task.assignee)} size={18} />
           <span className="truncate">{memberName(d.team, task.assignee)}</span>
           {task.comments?.length > 0 && (
@@ -113,7 +115,6 @@ function TaskTile({ task, active, onClick }: { task: Task; active: boolean; onCl
           )}
           <span className={cn(!task.comments?.length && 'ml-auto')}>{timeAgo(task.updated_at)}</span>
         </div>
-        {target && <div className="truncate text-[11px] text-accent-hover">{target.label}</div>}
       </div>
     </button>
   )
@@ -150,7 +151,7 @@ function TaskBody({ task, onClose }: { task: Task; onClose: () => void }) {
     <>
       <PanelScroll>
         <div className="space-y-4 p-4 text-[13px]">
-          {target?.image && <Thumb src={target.image} className="aspect-video w-full rounded-lg object-contain" />}
+          {target?.image && <Thumb src={target.image} className="max-h-40 w-auto max-w-[45%] rounded-lg object-contain" />}
           <Input value={title} onChange={(e) => setTitle(e.target.value)} className="text-sm font-medium" placeholder="Что сделать" />
           <div className="grid grid-cols-2 gap-2">
             <label className="space-y-1">

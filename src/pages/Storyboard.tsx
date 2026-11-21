@@ -4,11 +4,11 @@ import { ImageOff, LayoutGrid } from 'lucide-react'
 import type { Scene } from '@/types'
 import { sceneCast, seasonCharacters, useData, useScenesByTopic } from '@/store/data'
 import { CastChips } from '@/components/CastChips'
-import { SCENE_STATUS, statusMeta } from '@/lib/status'
+import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { mediaUrl, sceneCode } from '@/lib/media'
 import { cn, storageGet } from '@/lib/utils'
 import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
-import { ConfirmDialog, EmptyState, SegmentedControl, StatusBadge } from '@/components/ui'
+import { ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
 type Show = 'all' | 'missing' | 'manual'
@@ -40,7 +40,6 @@ function Board({ topicId }: { topicId: string }) {
     () => ({
       frames: all.filter((s) => s.base_image_url).length,
       manual: all.filter((s) => s.manual_prompt?.trim()).length,
-      approved: all.filter((s) => s.status === 'approved').length,
     }),
     [all],
   )
@@ -73,9 +72,6 @@ function Board({ topicId }: { topicId: string }) {
             <span>
               Кадров <b className="text-fg">{stats.frames}</b>/{all.length}
             </span>
-            <span>
-              Одобрено <b className="text-fg">{stats.approved}</b>
-            </span>
           </div>
         </div>
 
@@ -85,7 +81,7 @@ function Board({ topicId }: { topicId: string }) {
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
               {shown.map((s) => (
-                <Frame key={s.scene_id} scene={s} cast={sceneCast(s, pool)} active={s.scene_id === activeId} onClick={() => open(s.scene_id === activeId ? null : s.scene_id)} />
+                <Frame key={s.scene_id} scene={s} topic={topics.find((t) => t.topic_id === topicId)} cast={sceneCast(s, pool)} active={s.scene_id === activeId} onClick={() => open(s.scene_id === activeId ? null : s.scene_id)} />
               ))}
             </div>
           )}
@@ -108,7 +104,7 @@ function Board({ topicId }: { topicId: string }) {
   )
 }
 
-function Frame({ scene, cast, active, onClick }: { scene: Scene; cast: { name: string; known: boolean }[]; active: boolean; onClick: () => void }) {
+function Frame({ scene, topic, cast, active, onClick }: { scene: Scene; topic?: { url_final: string | null }; cast: { name: string; known: boolean }[]; active: boolean; onClick: () => void }) {
   const src = mediaUrl(scene.base_image_url)
   const [broken, setBroken] = useState<string>()
   const text = scene.dialogue_text || scene.action || scene.location_desc
@@ -131,7 +127,7 @@ function Frame({ scene, cast, active, onClick }: { scene: Scene; cast: { name: s
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 p-2">
         <div className="flex items-center gap-1.5">
-          <StatusBadge meta={statusMeta(SCENE_STATUS, scene.status)} />
+          <SceneStageBadge scene={scene} topic={topic} />
           {scene.shot_type && <span className="truncate text-[11px] text-fg-3">{scene.shot_type}</span>}
         </div>
         {text && <p className="line-clamp-2 text-xs text-fg-2">{text}</p>}

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { signOut, useSession } from '../AuthGate'
 import { Avatar, Button, DropdownContent, DropdownItem, DropdownLabel, DropdownMenu, DropdownSeparator, DropdownTrigger, Kbd } from '../ui'
 import { NAV } from './Sidebar'
+import { SECTIONS } from '@/pages/Settings'
 
 function useBreadcrumbs() {
   const { pathname } = useLocation()
@@ -19,7 +20,7 @@ function useBreadcrumbs() {
     crumbs.push({ label: topicTitle(t ?? { title: '', topic_id: id }), to: `/topics/${id}` })
   }
   if ((section === 'seasons' || section === 'characters') && id) crumbs.push({ label: seasonTitle(seasons.find((s) => s.id === id) ?? { title: '', id }) })
-  if (section === 'settings' && id) crumbs.push({ label: { access: 'Права доступа', integrations: 'Интеграции', system: 'Системные' }[id] ?? id })
+  if (section === 'settings' && id) crumbs.push({ label: SECTIONS.find((x) => x.id === id)?.label ?? id })
   return crumbs
 }
 

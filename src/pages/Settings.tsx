@@ -1,6 +1,34 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Navigate, useParams } from 'react-router-dom'
-import { Check, Database, Download, LayoutTemplate, Eraser, HardDrive, KeyRound, Loader2, Mail, Plug, Server, Shield, SlidersHorizontal, Sparkles, Trash2, UserPlus, X } from 'lucide-react'
+import {
+  Bot,
+  Check,
+  Cpu,
+  Database,
+  Download,
+  LayoutTemplate,
+  Eraser,
+  HardDrive,
+  KeyRound,
+  Loader2,
+  Mail,
+  Palette,
+  Plug,
+  Server,
+  Shield,
+  SlidersHorizontal,
+  Sparkles,
+  Stethoscope,
+  Trash2,
+  UserPlus,
+  Workflow,
+  X,
+} from 'lucide-react'
+import { StylesPage } from '@/pages/Styles'
+import { AgentsPage } from '@/pages/Agents'
+import { ProcessesPage } from '@/pages/Processes'
+import { ComputePage } from '@/pages/Compute'
+import { DiagnosticsPage } from '@/pages/Diagnostics'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import type { Integration, SystemSettings, User, UserRole } from '@/types'
@@ -10,39 +38,56 @@ import { cn, fmtDateTime, timeAgo } from '@/lib/utils'
 import { exportUiSettings } from '@/lib/uiSettings'
 import { Avatar, Button, ConfirmDialog, Input, Modal, Select, Skeleton } from '@/components/ui'
 
-const SECTIONS = [
-  { id: 'access', label: 'Права доступа', icon: Shield },
-  { id: 'integrations', label: 'Интеграции', icon: Plug },
-  { id: 'system', label: 'Системные', icon: SlidersHorizontal },
-  { id: 'interface', label: 'Интерфейс', icon: LayoutTemplate },
+/** Разделы настроек. page — полноценная страница (свой макет на всю ширину); demo — данные не сохраняются (нет таблиц). */
+export const SECTIONS = [
+  { id: 'styles', label: 'Стиль', icon: Palette, page: StylesPage, demo: false },
+  { id: 'agents', label: 'Агенты', icon: Bot, page: AgentsPage, demo: false },
+  { id: 'processes', label: 'Процессы', icon: Workflow, page: ProcessesPage, demo: false },
+  { id: 'compute', label: 'Вычисления', icon: Cpu, page: ComputePage, demo: false },
+  { id: 'diagnostics', label: 'Диагностика', icon: Stethoscope, page: DiagnosticsPage, demo: false },
+  { id: 'interface', label: 'Интерфейс', icon: LayoutTemplate, page: null, demo: false },
+  { id: 'access', label: 'Права доступа', icon: Shield, page: null, demo: true },
+  { id: 'integrations', label: 'Интеграции', icon: Plug, page: null, demo: true },
+  { id: 'system', label: 'Системные', icon: SlidersHorizontal, page: null, demo: true },
 ] as const
 
 export function SettingsPage() {
   const { section } = useParams()
-  if (!section) return <Navigate to="/settings/integrations" replace />
+  if (!section) return <Navigate to="/settings/styles" replace />
+  const current = SECTIONS.find((s) => s.id === section)
+  const Page = current?.page
   return (
     <div className="flex h-full min-h-0">
       <nav className="w-52 shrink-0 space-y-0.5 border-r border-border p-3" aria-label="Разделы настроек">
-        {SECTIONS.map(({ id, label, icon: Icon }) => (
+        {SECTIONS.map(({ id, label, icon: Icon, demo }) => (
           <NavLink
             key={id}
             to={`/settings/${id}`}
-            className={({ isActive }) =>
-              cn('flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-fg-2 hover:bg-hover hover:text-fg', isActive && 'bg-raised text-fg')
-            }
+            className={({ isActive }) => cn('flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-fg-2 hover:bg-hover hover:text-fg', isActive && 'bg-raised text-fg')}
           >
             <Icon className="size-4" /> {label}
+            {demo && (
+              <span className="ml-auto rounded bg-gold/10 px-1.5 text-[10px] font-medium text-gold" title="Нет таблицы в БД — данные не сохраняются">
+                демо
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl p-6">
-          {section === 'access' && <AccessSection />}
-          {section === 'integrations' && <IntegrationsSection />}
-          {section === 'system' && <SystemSection />}
-          {section === 'interface' && <InterfaceSection />}
+      {Page ? (
+        <div className="min-h-0 min-w-0 flex-1">
+          <Page />
         </div>
-      </div>
+      ) : (
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-4xl p-6">
+            {section === 'access' && <AccessSection />}
+            {section === 'integrations' && <IntegrationsSection />}
+            {section === 'system' && <SystemSection />}
+            {section === 'interface' && <InterfaceSection />}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -159,7 +204,9 @@ function AccessSection() {
                   return (
                     <td key={r} className="border-b border-border/60 px-4 py-2.5">
                       {v === 'rw' ? (
-                        <span className="inline-flex items-center gap-1 text-success"><Check className="size-3.5" /> изменение</span>
+                        <span className="inline-flex items-center gap-1 text-success">
+                          <Check className="size-3.5" /> изменение
+                        </span>
                       ) : v === 'r' ? (
                         <span className="text-info">просмотр</span>
                       ) : (
@@ -386,7 +433,12 @@ function SystemSection() {
           <Select className="w-64" value={s.timezone} onChange={(e) => setS({ ...s, timezone: e.target.value })} options={TIMEZONES.map((t) => ({ value: t, label: t }))} />
         </Row>
         <Row label="Формат даты и времени" hint={`Сейчас: ${fmtDateTime(new Date().toISOString())}`}>
-          <Select className="w-64" value={s.date_format} onChange={(e) => setS({ ...s, date_format: e.target.value })} options={DATE_FORMATS.map((t) => ({ value: t, label: t }))} />
+          <Select
+            className="w-64"
+            value={s.date_format}
+            onChange={(e) => setS({ ...s, date_format: e.target.value })}
+            options={DATE_FORMATS.map((t) => ({ value: t, label: t }))}
+          />
         </Row>
         <Row label="Базовый URL медиа" hint="Префикс для photo_paths и файлов сцен">
           <Input className="w-64 font-mono text-xs" value={s.media_base_url} onChange={(e) => setS({ ...s, media_base_url: e.target.value })} />
@@ -476,8 +528,8 @@ function InterfaceSection() {
       />
       <div className="space-y-3 rounded-xl border border-border bg-surface p-5 text-[13px] text-fg-2">
         <p>
-          Скачайте файл и положите его в корень проекта как <code className="font-mono text-xs text-fg">ui-settings.json</code>. После сборки и деплоя админка при
-          запуске применит эти настройки во всех браузерах: ключи из файла заменят локальные, остальные останутся.
+          Скачайте файл и положите его в корень проекта как <code className="font-mono text-xs text-fg">ui-settings.json</code>. После сборки и деплоя админка при запуске применит
+          эти настройки во всех браузерах: ключи из файла заменят локальные, остальные останутся.
         </p>
         <p className="text-fg-3">Фильтры, выбранный сезон и ролик в файл не попадают.</p>
         <Button variant="primary" onClick={download}>

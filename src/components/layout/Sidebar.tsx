@@ -1,31 +1,70 @@
 import { NavLink } from 'react-router-dom'
-import { Bot, Clapperboard, Cpu, Film, LayoutDashboard, LayoutGrid, Library, ListTodo, LogOut, Mic, Music2, Palette, PanelLeftClose, PanelLeftOpen, Scissors, ScrollText, Settings, Stethoscope, Theater, Users, Workflow } from 'lucide-react'
+import {
+  Clapperboard,
+  Film,
+  LayoutDashboard,
+  LayoutGrid,
+  Library,
+  ListTodo,
+  LogOut,
+  Mic,
+  Music2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Scissors,
+  ScrollText,
+  Settings,
+  Theater,
+  Users,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useData } from '@/store/data'
 import { isOpen } from '@/lib/tasks'
 import { signOut, useSession } from '../AuthGate'
 import { Avatar } from '../ui'
 
-export const NAV = [
-  { to: '/dashboard', label: 'Дашборд', icon: LayoutDashboard, demo: false },
-  { to: '/tasks', label: 'Задачи', icon: ListTodo, demo: false },
-  { to: '/seasons', label: 'Сезоны', icon: Library, demo: false },
-  { to: '/topics', label: 'Контент-план', icon: Clapperboard, demo: false },
-  { to: '/styles', label: 'Стиль', icon: Palette, demo: false },
-  { to: '/characters', label: 'Персонажи', icon: Users, demo: false },
-  { to: '/script', label: 'Сценарий', icon: ScrollText, demo: false },
-  { to: '/scenes', label: 'Сцены ролика', icon: Theater, demo: false },
-  { to: '/storyboard', label: 'Раскадровка', icon: LayoutGrid, demo: false },
-  { to: '/voice', label: 'Озвучка', icon: Mic, demo: false },
-  { to: '/animation', label: 'Анимация', icon: Film, demo: false },
-  { to: '/music', label: 'Музыка', icon: Music2, demo: false },
-  { to: '/montage', label: 'Монтаж', icon: Scissors, demo: false },
-  { to: '/agents', label: 'Агенты', icon: Bot, demo: false },
-  { to: '/processes', label: 'Процессы', icon: Workflow, demo: false },
-  { to: '/compute', label: 'Вычисления', icon: Cpu, demo: false },
-  { to: '/diagnostics', label: 'Диагностика', icon: Stethoscope, demo: false },
-  { to: '/settings', label: 'Настройки', icon: Settings, demo: true },
-] as const
+type NavItem = { to: string; label: string; icon: typeof Film; demo: boolean }
+
+/** Меню: дашборд и задачи, затем шаги конвейера по порядку, затем справочники и настройки. */
+export const NAV_GROUPS: { title: string | null; items: NavItem[] }[] = [
+  {
+    title: null,
+    items: [
+      {
+        to: '/dashboard',
+        label: 'Дашборд',
+        icon: LayoutDashboard,
+        demo: false,
+      },
+      { to: '/tasks', label: 'Задачи', icon: ListTodo, demo: false },
+    ],
+  },
+  {
+    title: 'Конвейер',
+    items: [
+      { to: '/seasons', label: 'Сезоны', icon: Library, demo: false },
+      { to: '/topics', label: 'Контент-план', icon: Clapperboard, demo: false },
+      { to: '/script', label: 'Сценарий', icon: ScrollText, demo: false },
+      { to: '/characters', label: 'Персонажи', icon: Users, demo: false },
+      { to: '/scenes', label: 'Сцены ролика', icon: Theater, demo: false },
+      {
+        to: '/storyboard',
+        label: 'Раскадровка',
+        icon: LayoutGrid,
+        demo: false,
+      },
+      { to: '/voice', label: 'Озвучка', icon: Mic, demo: false },
+      { to: '/animation', label: 'Анимация', icon: Film, demo: false },
+      { to: '/music', label: 'Музыка', icon: Music2, demo: false },
+      { to: '/montage', label: 'Монтаж', icon: Scissors, demo: false },
+    ],
+  },
+  {
+    title: null,
+    items: [{ to: '/settings', label: 'Настройки', icon: Settings, demo: false }],
+  },
+]
+export const NAV = NAV_GROUPS.flatMap((g) => g.items)
 
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const session = useSession()
@@ -42,37 +81,50 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         {!collapsed && <span className="truncate font-semibold tracking-tight">Pipeline Manager</span>}
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 p-2" aria-label="Основная навигация">
-        {NAV.map(({ to, label, icon: Icon, demo }) => (
-          <NavLink
-            key={to}
-            to={to}
-            title={collapsed ? label : undefined}
-            className={({ isActive }) =>
-              cn(
-                'relative flex h-9 items-center gap-3 rounded-md text-[13px] font-medium text-fg-2 transition-colors hover:bg-hover hover:text-fg',
-                collapsed ? 'justify-center' : 'px-3',
-                isActive && 'bg-accent/10 text-fg before:absolute before:top-1.5 before:bottom-1.5 before:-left-2 before:w-0.5 before:rounded-full before:bg-accent',
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon className={cn('size-4 shrink-0', isActive && 'text-accent-hover')} />
-                {!collapsed && <span className="truncate">{label}</span>}
-                {to === '/tasks' && myTasks > 0 && (
-                  <span className={cn('rounded-full bg-accent px-1.5 text-[10px] leading-4 font-semibold text-white', collapsed ? 'absolute top-0.5 right-1' : 'ml-auto')} title="Открытые задачи на мне">
-                    {myTasks}
-                  </span>
+      <nav className="flex flex-1 flex-col overflow-y-auto p-2" aria-label="Основная навигация">
+        {NAV_GROUPS.map((g, gi) => (
+          <div key={gi} className={cn('flex flex-col gap-0.5', gi > 0 && 'mt-3')}>
+            {g.title &&
+              (collapsed ? (
+                <div className="mx-2 mb-1 border-t border-border" />
+              ) : (
+                <div className="px-3 pb-1 text-[10px] font-semibold tracking-wider text-fg-3 uppercase">{g.title}</div>
+              ))}
+            {g.items.map(({ to, label, icon: Icon, demo }) => (
+              <NavLink
+                key={to}
+                to={to}
+                title={collapsed ? label : undefined}
+                className={({ isActive }) =>
+                  cn(
+                    'relative flex h-9 items-center gap-3 rounded-md text-[13px] font-medium text-fg-2 transition-colors hover:bg-hover hover:text-fg',
+                    collapsed ? 'justify-center' : 'px-3',
+                    isActive && 'bg-accent/10 text-fg before:absolute before:top-1.5 before:bottom-1.5 before:-left-2 before:w-0.5 before:rounded-full before:bg-accent',
+                  )
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <Icon className={cn('size-4 shrink-0', isActive && 'text-accent-hover')} />
+                    {!collapsed && <span className="truncate">{label}</span>}
+                    {to === '/tasks' && myTasks > 0 && (
+                      <span
+                        className={cn('rounded-full bg-accent px-1.5 text-[10px] leading-4 font-semibold text-white', collapsed ? 'absolute top-0.5 right-1' : 'ml-auto')}
+                        title="Открытые задачи на мне"
+                      >
+                        {myTasks}
+                      </span>
+                    )}
+                    {!collapsed && demo && (
+                      <span className="ml-auto rounded bg-gold/10 px-1.5 text-[10px] font-medium text-gold" title="Нет таблицы в БД — данные не сохраняются">
+                        демо
+                      </span>
+                    )}
+                  </>
                 )}
-                {!collapsed && demo && (
-                  <span className="ml-auto rounded bg-gold/10 px-1.5 text-[10px] font-medium text-gold" title="Нет таблицы в БД — данные не сохраняются">
-                    демо
-                  </span>
-                )}
-              </>
-            )}
-          </NavLink>
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
 

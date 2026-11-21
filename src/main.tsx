@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom'
+import { Navigate, RouterProvider, createBrowserRouter, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import './index.css'
 import { DataProvider } from '@/store/data'
@@ -15,16 +15,17 @@ import { VoicePage } from '@/pages/Voice'
 import { AnimationPage } from '@/pages/Animation'
 import { MontagePage } from '@/pages/Montage'
 import { MusicPage } from '@/pages/Music'
-import { ComputePage } from '@/pages/Compute'
-import { DiagnosticsPage } from '@/pages/Diagnostics'
 import { TasksPage } from '@/pages/Tasks'
-import { StylesPage } from '@/pages/Styles'
-import { ProcessesPage } from '@/pages/Processes'
 import { ScriptPage } from '@/pages/Script'
-import { AgentsPage } from '@/pages/Agents'
 import { SeasonsPage } from '@/pages/Seasons'
 import { SettingsPage } from '@/pages/Settings'
 import { applyBundledUiSettings } from '@/lib/uiSettings'
+
+/** Старые адреса (/agents, /processes…) — теперь разделы настроек; параметры (?agent=…) сохраняем. */
+function ToSettings({ id }: { id: string }) {
+  const { search } = useLocation()
+  return <Navigate to={`/settings/${id}${search}`} replace />
+}
 
 // Эталонные настройки интерфейса владельца (ui-settings.json в корне) — до первого чтения localStorage
 applyBundledUiSettings()
@@ -44,12 +45,12 @@ const router = createBrowserRouter([
       { path: 'animation/:topicId?', element: <AnimationPage /> },
       { path: 'music/:topicId?', element: <MusicPage /> },
       { path: 'montage/:topicId?', element: <MontagePage /> },
-      { path: 'styles', element: <StylesPage /> },
+      { path: 'styles', element: <ToSettings id="styles" /> },
       { path: 'characters/:seasonId?', element: <CharactersPage /> },
-      { path: 'agents', element: <AgentsPage /> },
-      { path: 'processes', element: <ProcessesPage /> },
-      { path: 'compute', element: <ComputePage /> },
-      { path: 'diagnostics', element: <DiagnosticsPage /> },
+      { path: 'agents', element: <ToSettings id="agents" /> },
+      { path: 'processes', element: <ToSettings id="processes" /> },
+      { path: 'compute', element: <ToSettings id="compute" /> },
+      { path: 'diagnostics', element: <ToSettings id="diagnostics" /> },
       { path: 'tasks', element: <TasksPage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/topics" replace /> },

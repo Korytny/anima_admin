@@ -4,7 +4,8 @@ import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { AudioLines, Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
 import type { Scene } from '@/types'
 import { GENERATING, sceneCast, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
-import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
+import { SCENE_STAGES, SCENE_STAGE_ORDER, TOPIC_STATUS, sceneStage, statusMeta } from '@/lib/status'
+import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
 import { CastChips } from '@/components/CastChips'
@@ -13,10 +14,6 @@ import {
   Badge,
   Button,
   ConfirmDialog,
-  DropdownContent,
-  DropdownItem,
-  DropdownMenu,
-  DropdownTrigger,
   EmptyState,
   Input,
   MultiSelectFilter,
@@ -82,11 +79,11 @@ function TopicScenes({ topicId }: { topicId: string }) {
     const ql = q.trim().toLowerCase()
     return all.filter(
       (s) =>
-        (!statuses.length || statuses.includes(s.status ?? '')) &&
+        (!statuses.length || statuses.includes(sceneStage(s, topic))) &&
         (!character || s.speaking_character === character || !!s.character?.includes(character)) &&
         (!ql || [s.dialogue_text, s.action, s.location_desc, s.visual_prompt, s.speaking_character].join(' ').toLowerCase().includes(ql)),
     )
-  }, [all, q, statuses, character])
+  }, [all, q, statuses, character, topic])
 
   const activeId = params.get('scene')
   const active = all.find((s) => s.scene_id === activeId) ?? null
@@ -153,11 +150,12 @@ function TopicScenes({ topicId }: { topicId: string }) {
         },
       },
       {
-        accessorKey: 'status',
-        header: 'Статус',
-        size: 120,
-        meta: { label: 'Статус' },
-        cell: ({ getValue }) => <StatusBadge meta={statusMeta(SCENE_STATUS, getValue())} />,
+        id: 'status',
+        header: 'Этап',
+        size: 150,
+        meta: { label: 'Этап' },
+        accessorFn: (s) => SCENE_STAGE_ORDER.indexOf(sceneStage(s, topic)),
+        cell: ({ row }) => <SceneStageBadge scene={row.original} topic={topic} />,
       },
       {
         id: 'cast',
@@ -315,10 +313,10 @@ function TopicScenes({ topicId }: { topicId: string }) {
               </div>
               <MultiSelectFilter
                 label="Статус"
-                options={statusOptions(SCENE_STATUS, all.map((s) => s.status))}
+                options={SCENE_STAGE_ORDER.map((v) => ({ value: v, label: SCENE_STAGES[v].label }))}
                 value={statuses}
                 onChange={setStatuses}
-                renderOption={(o) => <StatusBadge meta={statusMeta(SCENE_STATUS, o.value)} />}
+                renderOption={(o) => <StatusBadge meta={SCENE_STAGES[o.value as keyof typeof SCENE_STAGES]} />}
               />
               <Select className="w-40" value={character} onChange={(e) => setCharacter(e.target.value)} placeholder="Все персонажи" options={characters.map((c) => ({ value: c, label: c }))} />
               {filtersActive && (
@@ -337,20 +335,14 @@ function TopicScenes({ topicId }: { topicId: string }) {
           }
           toolbarRight={
             <>
-              {selectedIds.length > 0 && (
-                <DropdownMenu>
-                  <DropdownTrigger asChild>
-                    <Button variant="outline">Статус ({selectedIds.length})</Button>
-                  </DropdownTrigger>
-                  <DropdownContent>
-                    {Object.keys(SCENE_STATUS).map((s) => (
-                      <DropdownItem key={s} onSelect={() => updateScenes(selectedIds, { status: s })}>
-                        <StatusBadge meta={SCENE_STATUS[s]} />
-                        <span className="ml-auto font-mono text-[11px] text-fg-3">{s}</span>
-                      </DropdownItem>
-                    ))}
-                  </DropdownContent>
-                </DropdownMenu>
+              {selectedIds.some((id) => ['generating', 'error'].includes(all.find((x) => x.scene_id === id)?.status ?? '')) && (
+                <Button
+                  variant="outline"
+                  title="Снять пометку «генерация» / «ошибка» у выбранных (если n8n не обновил статус)"
+                  onClick={() => updateScenes(selectedIds.filter((id) => ['generating', 'error'].includes(all.find((x) => x.scene_id === id)?.status ?? '')), { status: null })}
+                >
+                  Сбросить генерацию
+                </Button>
               )}
               {selectedIds.length > 0 && (
                 <Button

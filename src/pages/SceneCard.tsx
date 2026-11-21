@@ -9,14 +9,15 @@ import { absPath, mediaUrl, outputPrefix, sceneCode, scenePath } from '@/lib/med
 import { listVariants, variantPrefix, type Variant } from '@/api/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
-import { SCENE_STATUS, statusMeta, statusOptions } from '@/lib/status'
+import { SCENE_STATUS, statusOptions } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { useCardLayout } from '@/lib/useCardLayout'
 import { cn, copyText, fmtDateTime } from '@/lib/utils'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
-import { Button, ConfirmDialog, Kbd, StatusBadge, Tabs, Thumb } from '@/components/ui'
+import { Button, ConfirmDialog, Kbd, Tabs, Thumb } from '@/components/ui'
+import { SceneStageBadge } from '@/components/SceneStageBadge'
 
 function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined): GroupDef<Scene>[] {
   const status = scene.status
@@ -120,6 +121,7 @@ const NO_BULK = new Set(['scena', 'shot_num', 'order', 'scene_id', 'topic', 'dia
 type Media = 'image' | 'video'
 
 export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene | null; siblings: Scene[]; onClose: () => void; onDelete: (id: string) => void }) {
+  const { topics } = useData()
   return (
     <SidePanel
       open={!!scene}
@@ -132,7 +134,7 @@ export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene
               <span className="inline-flex h-5 items-center rounded bg-raised px-1.5 font-mono text-xs">
                 {scene.scena ?? '—'}.{scene.shot_num ?? '—'}
               </span>
-              <StatusBadge meta={statusMeta(SCENE_STATUS, scene.status)} />
+              <SceneStageBadge scene={scene} topic={topics.find((t) => t.topic_id === scene.topic)} />
             </div>
             <h2 className="mt-1 truncate text-base font-semibold">{scene.speaking_character || `Сцена ${scene.scena ?? ''}`}</h2>
           </div>
