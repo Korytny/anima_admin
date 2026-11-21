@@ -23,7 +23,7 @@
 // Имена одинаковые во всех конвейерах — скрипт копируется без правок.
 const VARS_NODE = 'Vars'                  // переменные запуска (frame_vars.js и т.п.)
 const WORKFLOW_NODE = 'Workflow'          // шаблон процесса
-const SETTINGS_NODE = 'Process settings'  // Supabase: process_settings по имени файла (Settings → Always Output Data: вкл.)
+const SETTINGS_NODES = ['Process settings', 'process_settings'] // Supabase: process_settings по имени файла (Settings → Always Output Data: вкл.)
 
 const TEXT_FIELDS = ['text', 'prompt', 'value', 'string']
 const labelOf = (node) => String(node?._meta?.title ?? '').trim().split(/\s/)[0].toLowerCase()
@@ -63,14 +63,27 @@ try {
     node[1].inputs[field] = value
   }
 
-  // 2. Настройки процесса (необязательны)
+  // 2. Настройки процесса: строки может не быть (тогда — по шаблону), но узел должен быть — иначе это ошибка сборки
   let settings = {}
-  try {
-    const row = $(SETTINGS_NODE).first().json
-    settings = typeof row?.settings === 'string' ? JSON.parse(row.settings) : (row?.settings ?? {})
-  } catch {
-    /* узла нет или строка пустая — работаем по шаблону */
+  let settingsNode = null
+  for (const name of SETTINGS_NODES) {
+    try {
+      const row = $(name).first().json
+      settingsNode = name
+      // Пустой ответ (строки нет или база не ответила — Always Output Data пропускает его дальше) — не генерируем молча без стиля
+      if (!row || !('settings' in row))
+        throw new Error(
+          `Узел «${name}» вернул пусто: в process_settings нет строки для этого процесса или база не ответила. ` +
+            `Создайте настройки в админке (Настройки → Процессы → «Сохранить») и на сервере читайте их узлом Supabase, не Postgres`,
+        )
+      settings = typeof row.settings === 'string' ? JSON.parse(row.settings) : (row.settings ?? {})
+      break
+    } catch (e) {
+      if (String(e?.message ?? e).includes('вернул пусто')) throw e
+      /* узла с таким именем нет — пробуем следующее */
+    }
   }
+  if (!settingsNode) throw new Error(`Нет узла настроек процесса — назовите узел Supabase с таблицей process_settings одним из: ${SETTINGS_NODES.join(', ')}`)
   for (const [k, v] of Object.entries(settings.values ?? {})) setField(k, v)
 
   // 3. Переменные «#метка.поле» — как есть
@@ -117,7 +130,7 @@ try {
   if (seed) seed[1].inputs['noise_seed' in seed[1].inputs ? 'noise_seed' : 'seed'] = vars.seed ?? Math.floor(Math.random() * 2 ** 48)
 
   const plain = Object.fromEntries(Object.entries(vars).filter(([k, v]) => !Array.isArray(v) && !k.startsWith('#')))
-  return [{ json: { ...plain, comfy_body: { prompt: wf }, save_node: save?.[0] ?? null, prompt_text: promptText } }]
+  return [{ json: { ...plain, comfy_body: { prompt: wf }, save_node: save?.[0] ?? null, prompt_text: promptText, prompt_template: settings.prompt?.trim() || '{{prompt}}', settings_node: settingsNode } }]
 } catch (error) {
   return [{ json: { error: error.message } }]
 }

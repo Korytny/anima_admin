@@ -18,6 +18,7 @@ import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { Button, ConfirmDialog, Kbd, Tabs, Thumb } from '@/components/ui'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
+import { Lightbox } from '@/components/Lightbox'
 
 function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined): GroupDef<Scene>[] {
   const status = scene.status
@@ -167,6 +168,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   // Варианты кадра на диске (каждая перегенерация — новый файл рядом); основной — тот, что в base_image_url
   const [variants, setVariants] = useState<Variant[]>([])
   const [variant, setVariant] = useState<string | null>(null) // выбранный для просмотра; null — показываем основной
+  const [zoom, setZoom] = useState<number | null>(null) // индекс в списке zoomList — открыт просмотр во весь экран
   const prefix = scene.base_image_url ? variantPrefix(scene.base_image_url) : outputPrefix(scene, topic, season)
   useEffect(() => {
     let alive = true
@@ -181,6 +183,8 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const frames = [scene.base_image_url, scene.event_img].filter((x): x is string => !!x)
   const images = [...frames, ...(scene.char_img_url ?? []).filter(Boolean)]
   const mainSrc = variant ?? (img != null ? images[img] : frames[0])
+  // Во весь экран листаются: кадр, варианты кадра, референсы — без повторов
+  const zoomList = [...new Set([...frames, ...variants.map((v) => v.path), ...images.slice(frames.length)])]
   const isMain = (p: string) => !!scene.base_image_url && variantPrefix(p) === variantPrefix(scene.base_image_url) && p.split('/').pop() === scene.base_image_url.split('/').pop()
   const applyKeys = [...dirtyKeys].filter((k) => !NO_BULK.has(k))
   const generating = scene.status === GENERATING
@@ -225,7 +229,10 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
           ) : (
             <>
               <div className="relative">
-                <Thumb src={mainSrc} className="aspect-video w-full rounded-lg object-contain" />
+                <button className="block w-full cursor-zoom-in" disabled={!mainSrc} title="Открыть во весь экран" onClick={() => mainSrc && setZoom(Math.max(0, zoomList.indexOf(mainSrc)))}>
+                  <Thumb src={mainSrc} className="aspect-video w-full rounded-lg object-contain" />
+                </button>
+                {zoom != null && zoomList.length > 0 && <Lightbox images={zoomList} index={Math.min(zoom, zoomList.length - 1)} onIndex={setZoom} onClose={() => setZoom(null)} />}
                 {!mainSrc && !generating && (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-fg-3">Кадра ещё нет</div>
                 )}
