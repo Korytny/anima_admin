@@ -6,6 +6,8 @@ import { useData } from '@/store/data'
 import { useSession } from '@/components/AuthGate'
 import { TASK_STATUSES, isOpen, memberName, taskStatus, taskTarget } from '@/lib/tasks'
 import { cn, fmtDateTime, timeAgo } from '@/lib/utils'
+import { sceneCode } from '@/lib/media'
+import { sortScenes } from '@/store/data'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { Avatar, Button, ConfirmDialog, EmptyState, Input, Kbd, Select, Textarea, Thumb } from '@/components/ui'
 
@@ -160,6 +162,7 @@ function TaskBody({ task, onClose }: { task: Task; onClose: () => void }) {
               <Select value={task.assignee ?? ''} onChange={(e) => void updateTask(task.id, { assignee: e.target.value || null }, true)} options={[{ value: '', label: 'никому' }, ...team.map((m) => ({ value: m.user_id, label: memberName(team, m.user_id) }))]} />
             </label>
           </div>
+          <TaskLink task={task} />
           {target && (
             <button className="flex items-center gap-1.5 text-xs text-accent-hover hover:underline" onClick={() => navigate(target.href)}>
               <ExternalLink className="size-3.5" /> Открыть {target.label}
@@ -238,5 +241,52 @@ function TaskBody({ task, onClose }: { task: Task; onClose: () => void }) {
         }}
       />
     </>
+  )
+}
+
+/** Привязка задачи: серия → шот, или персонаж. От привязки — фото карточки и ссылка «Открыть». */
+function TaskLink({ task }: { task: Task }) {
+  const { topics, scenes, characters, seasons, updateTask } = useData()
+  const topicOptions = useMemo(
+    () =>
+      [...topics]
+        .filter((t) => t.season_id)
+        .sort((a, b) => (a.season_id ?? '').localeCompare(b.season_id ?? '') || (a.backlog ?? 0) - (b.backlog ?? 0))
+        .map((t) => ({ value: t.topic_id, label: `${seasons.find((x) => x.id === t.season_id)?.title ?? ''} · ${t.backlog ?? '?'}. ${t.title}` })),
+    [topics, seasons],
+  )
+  const shotOptions = useMemo(
+    () =>
+      scenes
+        .filter((s) => s.topic === task.topic_id)
+        .sort(sortScenes)
+        .map((s) => ({ value: s.scene_id, label: `${sceneCode(s)}${s.base_image_url ? '' : ' · без кадра'}${s.dialogue_text ? ` · ${s.dialogue_text.slice(0, 40)}` : ''}` })),
+    [scenes, task.topic_id],
+  )
+  const seasonId = topics.find((t) => t.topic_id === task.topic_id)?.season_id
+  const characterOptions = useMemo(
+    () =>
+      characters
+        .filter((c) => c.name && (!seasonId || c.season === seasonId))
+        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+        .map((c) => ({ value: c.id, label: c.name ?? c.id })),
+    [characters, seasonId],
+  )
+  const set = (patch: Partial<Task>) => void updateTask(task.id, patch, true)
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <label className="col-span-2 space-y-1">
+        <span className="text-xs text-fg-3">Серия</span>
+        <Select value={task.topic_id ?? ''} onChange={(e) => set({ topic_id: e.target.value || null, scene_id: null })} options={[{ value: '', label: 'без серии' }, ...topicOptions]} />
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-fg-3">Шот</span>
+        <Select value={task.scene_id ?? ''} disabled={!task.topic_id} onChange={(e) => set({ scene_id: e.target.value || null })} options={[{ value: '', label: task.topic_id ? 'без шота' : 'сначала серия' }, ...shotOptions]} />
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-fg-3">Персонаж</span>
+        <Select value={task.character_id ?? ''} onChange={(e) => set({ character_id: e.target.value || null })} options={[{ value: '', label: 'без персонажа' }, ...characterOptions]} />
+      </label>
+    </div>
   )
 }
