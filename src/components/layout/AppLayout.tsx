@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { CommandMenu } from './CommandMenu'
 import { AssistantProvider } from '../Assistant'
+import { ImageQueueBar } from '../ImageQueueBar'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = usePersistentState('ui:sidebar-collapsed', false)
@@ -29,6 +30,7 @@ export function AppLayout() {
           </main>
         </div>
         <CommandMenu open={search} onOpenChange={setSearch} />
+        <ImageQueueBar />
       </div>
     </AssistantProvider>
   )

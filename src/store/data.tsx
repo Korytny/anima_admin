@@ -50,6 +50,18 @@ interface DataState {
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
+/** Очередь кадров во вкладке: pending — ещё не отправлены; current — в n8n сейчас. */
+export interface ImageQueue {
+  pending: string[]
+  current: string | null
+  started: number
+  launching: boolean
+  done: number
+  failed: number
+  total: number
+}
+const IMAGE_TIMEOUT_MS = 15 * 60_000
+
 function useDataStore() {
   const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], characters: [], agents: [], seasons: [], tasks: [], team: [] })
   const stateRef = useRef(state)
@@ -169,7 +181,51 @@ function useDataStore() {
     if (Object.keys(next).length !== keys.length) setJobs(next)
   }, [state, jobs])
 
-  const active = state.scenes.some((s) => s.status === GENERATING) || Object.keys(jobs).length > 0
+  // ── Очередь кадров: генерация по одному шоту. Следующий уходит в n8n, когда у текущего статус сменился
+  // с 'generating' на 'ready' / 'error' (или прошёл таймаут). Живёт во вкладке — n8n не меняется.
+  const [imgQueue, setImgQueue] = useState<ImageQueue | null>(null)
+  const launchImage = useCallback(async (scene: Scene) => {
+    try {
+      const [marked] = await api.updateScenes([scene.scene_id], { status: GENERATING })
+      if (marked) setState((s) => ({ ...s, scenes: s.scenes.map((x) => (x.scene_id === marked.scene_id ? marked : x)) }))
+      await requestSceneImage(scene)
+    } catch (e) {
+      toast.error('Не удалось запустить генерацию кадра', { description: errMsg(e) })
+      const res = await api.updateScenes([scene.scene_id], { status: 'error' }).catch(() => null)
+      if (res?.[0]) setState((s) => ({ ...s, scenes: s.scenes.map((x) => (x.scene_id === res[0].scene_id ? res[0] : x)) }))
+    } finally {
+      setImgQueue((q) => (q && q.current === scene.scene_id ? { ...q, launching: false } : q))
+    }
+  }, [])
+  useEffect(() => {
+    const q = imgQueue
+    if (!q) return
+    if (q.current) {
+      if (q.launching) return
+      const sc = state.scenes.find((s) => s.scene_id === q.current)
+      const timedOut = Date.now() - q.started > IMAGE_TIMEOUT_MS
+      if (sc?.status === GENERATING && !timedOut) return
+      if (timedOut) toast.warning('Кадр не пришёл за 15 мин — перехожу к следующему', { description: 'Проверьте выполнение в n8n' })
+      const failed = !sc || sc.status === 'error' || timedOut
+      setImgQueue({ ...q, current: null, done: q.done + 1, failed: q.failed + (failed ? 1 : 0) })
+      return
+    }
+    if (!q.pending.length) {
+      if (q.total) (q.failed ? toast.warning : toast.success)(`Кадры: готово ${q.done - q.failed} из ${q.total}${q.failed ? `, с ошибкой ${q.failed}` : ''}`)
+      setImgQueue(null)
+      return
+    }
+    const [id, ...rest] = q.pending
+    const sc = stateRef.current.scenes.find((s) => s.scene_id === id)
+    if (!sc) {
+      setImgQueue({ ...q, pending: rest, done: q.done + 1, failed: q.failed + 1 })
+      return
+    }
+    setImgQueue({ ...q, pending: rest, current: id, started: Date.now(), launching: true })
+    void launchImage(sc)
+  }, [imgQueue, state.scenes, launchImage])
+
+  const active = state.scenes.some((s) => s.status === GENERATING) || Object.keys(jobs).length > 0 || !!imgQueue
   useEffect(() => {
     const t = setInterval(() => !document.hidden && load(true), active ? REFRESH_ACTIVE_MS : REFRESH_MS)
     return () => clearInterval(t)
@@ -242,31 +298,22 @@ function useDataStore() {
         if (ok) setState((s) => ({ ...s, scenes: s.scenes.filter((x) => !ids.includes(x.scene_id)) }))
       },
 
-      /** Ставит сцены в 'generating' и дергает вебхук n8n по каждой. Ошибка запуска → 'error'. */
-      async generateSceneImages(scenes: Scene[]) {
-        if (!scenes.length) return
-        const ids = scenes.map((s) => s.scene_id)
-        const marked = await run(api.updateScenes(ids, { status: GENERATING }))
-        if (!marked) return
-        const map = new Map(marked.map((x) => [x.scene_id, x]))
-        setState((s) => ({ ...s, scenes: s.scenes.map((x) => map.get(x.scene_id) ?? x) }))
-
-        const results = await Promise.allSettled(
-          scenes.map((sc) => requestSceneImage(sc)),
-        )
-        const failed = ids.filter((_, i) => results[i].status === 'rejected')
-        if (failed.length) {
-          const reason = (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason
-          toast.error(`Не удалось запустить генерацию: ${failed.length} из ${ids.length}`, { description: errMsg(reason) })
-          const res = await api.updateScenes(failed, { status: 'error' }).catch(() => null)
-          if (res) {
-            const m = new Map(res.map((x) => [x.scene_id, x]))
-            setState((s) => ({ ...s, scenes: s.scenes.map((x) => m.get(x.scene_id) ?? x) }))
-          }
-        }
-        if (failed.length < ids.length) toast.success(`Генерация запущена: ${ids.length - failed.length}`)
+      /** Ставит шоты в очередь кадров (по порядку). Один шот или пачка — все идут через очередь, по одному. */
+      generateSceneImages(scenes: Scene[]) {
+        const ids = scenes.map((x) => x.scene_id)
+        if (!ids.length) return
+        setImgQueue((q) => {
+          const busy = new Set([...(q?.pending ?? []), ...(q?.current ? [q.current] : [])])
+          const add = ids.filter((id) => !busy.has(id))
+          if (!add.length) return q
+          if (q) return { ...q, pending: [...q.pending, ...add], total: q.total + add.length }
+          return { pending: add, current: null, started: 0, launching: false, done: 0, failed: 0, total: add.length }
+        })
       },
-
+      /** Остановить очередь: текущий кадр n8n доделает, остальные не отправляются. */
+      stopImageQueue() {
+        setImgQueue((q) => (q ? { ...q, pending: [], total: q.done + (q.current ? 1 : 0) } : q))
+      },
       /** Озвучка/видео шотов (ids = scene_id) или монтаж серий (ids = topic_id) — вебхук n8n по каждому. */
       async runJobs(kind: Exclude<JobKind, 'music'>, ids: string[]) {
         if (!ids.length) return
@@ -379,7 +426,8 @@ function useDataStore() {
   )
 
   const isRunning = useCallback((kind: JobKind, id: string) => !!jobs[jobKey(kind, id)], [jobs])
-  return { ...state, ...actions, isRunning }
+  const isQueued = useCallback((id: string) => !!imgQueue?.pending.includes(id), [imgQueue])
+  return { ...state, ...actions, isRunning, imageQueue: imgQueue, isQueued }
 }
 
 type DataCtx = ReturnType<typeof useDataStore>

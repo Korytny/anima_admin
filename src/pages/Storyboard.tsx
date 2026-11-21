@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { ImageOff, LayoutGrid } from 'lucide-react'
+import { ImageOff, LayoutGrid, Sparkles } from 'lucide-react'
+import { pipelineConfigured } from '@/api/pipeline'
 import type { Scene } from '@/types'
 import { sceneCast, seasonCharacters, useData, useScenesByTopic } from '@/store/data'
 import { CastChips } from '@/components/CastChips'
@@ -8,7 +9,7 @@ import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { mediaUrl, sceneCode } from '@/lib/media'
 import { cn, storageGet } from '@/lib/utils'
 import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
-import { ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
+import { Button, ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
 type Show = 'all' | 'missing' | 'manual'
@@ -25,7 +26,9 @@ export function StoryboardPage() {
 
 function Board({ topicId }: { topicId: string }) {
   const [params, setParams] = useSearchParams()
-  const { characters, topics, loading, deleteScenes } = useData()
+  const { characters, topics, loading, deleteScenes, generateSceneImages } = useData()
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const toggle = (id: string) => setPicked((p) => (p.has(id) ? new Set([...p].filter((x) => x !== id)) : new Set([...p, id])))
   const seasonId = topics.find((t) => t.topic_id === topicId)?.season_id
   const pool = useMemo(() => seasonCharacters(seasonId, characters), [seasonId, characters])
   const all = useScenesByTopic().get(topicId) ?? []
@@ -68,6 +71,34 @@ function Board({ topicId }: { topicId: string }) {
               { value: 'manual', label: `С ручным промптом ${stats.manual}` },
             ]}
           />
+          {picked.size > 0 && (
+            <>
+              <Button
+                variant="primary"
+                disabled={!pipelineConfigured}
+                title="Поставить выбранные шоты в очередь кадров: по одному, по порядку"
+                onClick={() => {
+                  generateSceneImages(all.filter((x) => picked.has(x.scene_id)))
+                  setPicked(new Set())
+                }}
+              >
+                <Sparkles /> Сгенерировать выбранные ({picked.size})
+              </Button>
+              <Button variant="ghost" onClick={() => setPicked(new Set())}>
+                Снять выбор
+              </Button>
+            </>
+          )}
+          {all.length - stats.frames > 0 && (
+            <Button
+              variant="outline"
+              disabled={!pipelineConfigured}
+              title="Все шоты серии без кадра — в очередь, по порядку"
+              onClick={() => generateSceneImages(all.filter((x) => !x.base_image_url))}
+            >
+              <Sparkles /> Сгенерировать недостающие ({all.length - stats.frames})
+            </Button>
+          )}
           <div className="ml-auto flex items-center gap-4 text-xs text-fg-3">
             <span>
               Кадров <b className="text-fg">{stats.frames}</b>/{all.length}
@@ -81,7 +112,16 @@ function Board({ topicId }: { topicId: string }) {
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
               {shown.map((s) => (
-                <Frame key={s.scene_id} scene={s} topic={topics.find((t) => t.topic_id === topicId)} cast={sceneCast(s, pool)} active={s.scene_id === activeId} onClick={() => open(s.scene_id === activeId ? null : s.scene_id)} />
+                <Frame
+                  key={s.scene_id}
+                  scene={s}
+                  topic={topics.find((t) => t.topic_id === topicId)}
+                  cast={sceneCast(s, pool)}
+                  active={s.scene_id === activeId}
+                  picked={picked.has(s.scene_id)}
+                  onPick={() => toggle(s.scene_id)}
+                  onClick={() => open(s.scene_id === activeId ? null : s.scene_id)}
+                />
               ))}
             </div>
           )}
@@ -104,14 +144,31 @@ function Board({ topicId }: { topicId: string }) {
   )
 }
 
-function Frame({ scene, topic, cast, active, onClick }: { scene: Scene; topic?: { url_final: string | null }; cast: { name: string; known: boolean }[]; active: boolean; onClick: () => void }) {
+function Frame({
+  scene,
+  topic,
+  cast,
+  active,
+  picked,
+  onPick,
+  onClick,
+}: {
+  scene: Scene
+  topic?: { url_final: string | null }
+  cast: { name: string; known: boolean }[]
+  active: boolean
+  picked: boolean
+  onPick: () => void
+  onClick: () => void
+}) {
   const src = mediaUrl(scene.base_image_url)
   const [broken, setBroken] = useState<string>()
   const text = scene.dialogue_text || scene.action || scene.location_desc
   return (
+    <div className="relative">
     <button
       onClick={onClick}
-      className={cn('group flex flex-col overflow-hidden rounded-lg border bg-surface text-left transition-colors hover:border-fg-3', active ? 'border-accent ring-1 ring-accent' : 'border-border')}
+      className={cn('group flex w-full flex-col overflow-hidden rounded-lg border bg-surface text-left transition-colors hover:border-fg-3', active ? 'border-accent ring-1 ring-accent' : picked ? 'border-accent' : 'border-border')}
     >
       <div className="relative aspect-video bg-raised">
         {src && broken !== src ? (
@@ -134,5 +191,14 @@ function Frame({ scene, topic, cast, active, onClick }: { scene: Scene; topic?: 
         {cast.length > 0 && <CastChips cast={cast} className="mt-auto" />}
       </div>
     </button>
+      <input
+        type="checkbox"
+        checked={picked}
+        onChange={onPick}
+        aria-label="Выбрать шот"
+        title="Выбрать для генерации"
+        className="absolute top-1.5 right-1.5 size-4 cursor-pointer accent-[var(--color-accent)]"
+      />
+    </div>
   )
 }

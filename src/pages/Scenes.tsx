@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { AudioLines, Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
 import type { Scene } from '@/types'
-import { GENERATING, sceneCast, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { GENERATING, sceneCast, sortScenes, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STAGES, SCENE_STAGE_ORDER, TOPIC_STATUS, sceneStage, statusMeta } from '@/lib/status'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
@@ -347,21 +347,15 @@ function TopicScenes({ topicId }: { topicId: string }) {
               {selectedIds.length > 0 && (
                 <Button
                   variant="outline"
-                  disabled={!pipelineConfigured || selectedIds.length > 1}
-                  title={
-                    !pipelineConfigured
-                      ? 'Не задан VITE_N8N_IMAGE_WEBHOOK'
-                      : selectedIds.length > 1
-                        ? 'Пока кадры генерируются по одному: выберите один шот или откройте его карточку. Массовая генерация — позже (очередь в n8n)'
-                        : 'Запустить генерацию кадра в n8n'
-                  }
+                  disabled={!pipelineConfigured}
+                  title={pipelineConfigured ? 'Поставить выбранные шоты в очередь кадров: по одному, по порядку' : 'Не задан VITE_N8N_IMAGE_WEBHOOK'}
                   onClick={() => {
                     const ids = new Set(selectedIds)
-                    void generateSceneImages(allScenes.filter((s) => ids.has(s.scene_id)))
+                    generateSceneImages(allScenes.filter((s) => ids.has(s.scene_id)).sort(sortScenes))
                     setSelection({})
                   }}
                 >
-                  <Sparkles /> Сгенерировать фото{selectedIds.length > 1 ? ` (${selectedIds.length})` : ''}
+                  <Sparkles /> Сгенерировать фото ({selectedIds.length})
                 </Button>
               )}
               {selectedIds.length > 0 && (

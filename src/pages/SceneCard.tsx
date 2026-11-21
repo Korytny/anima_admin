@@ -148,7 +148,7 @@ export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene
 }
 
 function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; onDelete: (id: string) => void }) {
-  const { updateScene, updateScenes, generateSceneImages, topics, characters, seasons, team, tasks, createTask } = useData()
+  const { updateScene, updateScenes, generateSceneImages, isQueued, topics, characters, seasons, team, tasks, createTask } = useData()
   const me = useSession()?.user.id
   const navigate = useNavigate()
   const seasonId = topics.find((t) => t.topic_id === scene.topic)?.season_id
@@ -188,6 +188,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const isMain = (p: string) => !!scene.base_image_url && variantPrefix(p) === variantPrefix(scene.base_image_url) && p.split('/').pop() === scene.base_image_url.split('/').pop()
   const applyKeys = [...dirtyKeys].filter((k) => !NO_BULK.has(k))
   const generating = scene.status === GENERATING
+  const queued = isQueued(scene.scene_id)
 
   // Несохранённые правки промпта сначала пишем в БД — n8n берёт данные оттуда
   const generate = async () => {
@@ -195,17 +196,17 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
     setImg(null)
     setVariant(null)
     setMedia('image')
-    await generateSceneImages([{ ...scene, ...draft }])
+    generateSceneImages([{ ...scene, ...draft }])
   }
   const generateBtn = (
     <Button
       variant={dirty ? 'outline' : 'primary'}
       onClick={generate}
-      disabled={generating || saving || !pipelineConfigured}
-      title={pipelineConfigured ? 'Сгенерировать кадр (base_image_url) в n8n' : 'Не задан VITE_N8N_IMAGE_WEBHOOK'}
+      disabled={generating || queued || saving || !pipelineConfigured}
+      title={pipelineConfigured ? 'Поставить шот в очередь кадров (если очередь пуста — сразу в n8n)' : 'Не задан VITE_N8N_IMAGE_WEBHOOK'}
     >
-      {generating ? <Loader2 className="animate-spin" /> : <Sparkles />}
-      {generating ? 'Генерируется…' : dirty ? 'Сохранить и сгенерировать' : scene.base_image_url ? 'Перегенерировать' : 'Сгенерировать фото'}
+      {generating || queued ? <Loader2 className="animate-spin" /> : <Sparkles />}
+      {generating ? 'Генерируется…' : queued ? 'В очереди…' : dirty ? 'Сохранить и сгенерировать' : scene.base_image_url ? 'Перегенерировать' : 'Сгенерировать фото'}
     </Button>
   )
 
