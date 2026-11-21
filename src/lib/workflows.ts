@@ -33,12 +33,11 @@ export interface Slot {
 export const SLOTS: Slot[] = [
   {
     file: 'frame-refs.json',
-    title: 'Кадр с персонажами',
-    description: 'Референсы персонажей сцены (1–3) → кадр. Шаблон на 3; лишние #ref n8n удаляет вместе со входом images.imageN',
+    title: 'Кадр',
+    description: 'Кадр шота: 0–3 референса персонажей. Шаблон на 3; лишние #ref n8n удаляет вместе со входом images.imageN — без персонажей тот же процесс работает как текст → картинка',
     required: ['#prompt', '#ref1', '#save'],
     optional: ['#ref2', '#ref3', '#lora', '#seed', '#size', '#negative'],
   },
-  { file: 'frame-0ref.json', title: 'Кадр без персонажей', description: 'Текст → картинка: пейзаж, предмет, общий план', required: ['#prompt', '#save'], optional: ['#lora', '#seed', '#size', '#negative'] },
   { file: 'character.json', title: 'Портрет персонажа', description: 'Референс персонажа для библиотеки сезона', required: ['#prompt', '#save'], optional: ['#lora', '#seed', '#size', '#negative'] },
 ]
 

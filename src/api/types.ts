@@ -1,4 +1,4 @@
-import type { Agent, AgentPromptVersion, ProcessSettings, Season, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
+import type { Agent, AgentPromptVersion, ProcessSettings, Task, TaskComment, TeamMember, Season, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
 
 /**
  * Контракт слоя данных. UI работает только через него.
@@ -34,6 +34,12 @@ export interface Api {
   deleteAgents(ids: number[]): Promise<void>
   listPromptVersions(agentId: number): Promise<AgentPromptVersion[]>
   listProcessSettings(): Promise<Record<string, ProcessSettings>>
+  listTasks(): Promise<Task[]>
+  listTeam(): Promise<TeamMember[]>
+  createTask(data: Partial<Task>): Promise<Task>
+  updateTask(id: string, patch: Partial<Task>): Promise<Task>
+  deleteTask(id: string): Promise<void>
+  addTaskComment(id: string, comment: TaskComment): Promise<Task>
   saveProcessSettings(file: string, settings: ProcessSettings): Promise<void>
   addPromptVersion(v: Pick<AgentPromptVersion, 'agent_id' | 'prompt' | 'model' | 'source' | 'note'>): Promise<AgentPromptVersion>
 

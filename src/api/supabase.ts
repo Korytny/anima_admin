@@ -1,6 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import type { Agent, AgentPromptVersion, ProcessSettings, Season, Character, Scene, Topic } from '@/types'
+import type { Agent, AgentPromptVersion, ProcessSettings, Task, TaskComment, TeamMember, Season, Character, Scene, Topic } from '@/types'
 
 const PAGE = 1000
 
@@ -113,6 +113,36 @@ export const supabaseData = {
 
   async updateAgent(id: number, patch: Partial<Agent>) {
     return check(await supabase.from('agents').update(patch).eq('id', id).select().single()) as Agent
+  },
+
+  // Задачи команды: supabase/tasks.sql. Переписка — массив comments в той же строке
+  listTasks: () => selectAll<Task>('tasks', 'updated_at'),
+  async listTeam() {
+    return check(await supabase.from('admin_users').select('user_id, email, name')) as TeamMember[]
+  },
+  async createTask(data: Partial<Task>) {
+    return check(await supabase.from('tasks').insert({ title: 'Новая задача', ...data }).select().single()) as Task
+  },
+  async updateTask(id: string, patch: Partial<Task>) {
+    return check(await supabase.from('tasks').update({ ...patch, updated_at: now() }).eq('id', id).select().single()) as Task
+  },
+  async deleteTask(id: string) {
+    check(await supabase.from('tasks').delete().eq('id', id))
+  },
+  /** Дописать сообщение к СВЕЖЕЙ переписке: перечитываем задачу и сохраняем, только если её не меняли с момента чтения (иначе — снова). */
+  async addTaskComment(id: string, comment: TaskComment) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const cur = check(await supabase.from('tasks').select('comments, updated_at').eq('id', id).single()) as Pick<Task, 'comments' | 'updated_at'>
+      const res = await supabase
+        .from('tasks')
+        .update({ comments: [...(cur.comments ?? []), comment], updated_at: now() })
+        .eq('id', id)
+        .eq('updated_at', cur.updated_at)
+        .select()
+      const rows = check(res) as Task[]
+      if (rows.length) return rows[0]
+    }
+    throw new Error('Задачу одновременно меняют — сообщение не сохранилось, попробуйте ещё раз')
   },
 
   // Настройки процессов ComfyUI: supabase/process_settings.sql

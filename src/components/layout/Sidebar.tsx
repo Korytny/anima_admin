@@ -1,11 +1,14 @@
 import { NavLink } from 'react-router-dom'
-import { Bot, Clapperboard, Cpu, Film, LayoutDashboard, LayoutGrid, Library, LogOut, Mic, Music2, Palette, PanelLeftClose, PanelLeftOpen, Scissors, ScrollText, Settings, Stethoscope, Theater, Users, Workflow } from 'lucide-react'
+import { Bot, Clapperboard, Cpu, Film, LayoutDashboard, LayoutGrid, Library, ListTodo, LogOut, Mic, Music2, Palette, PanelLeftClose, PanelLeftOpen, Scissors, ScrollText, Settings, Stethoscope, Theater, Users, Workflow } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useData } from '@/store/data'
+import { isOpen } from '@/lib/tasks'
 import { signOut, useSession } from '../AuthGate'
 import { Avatar } from '../ui'
 
 export const NAV = [
   { to: '/dashboard', label: 'Дашборд', icon: LayoutDashboard, demo: false },
+  { to: '/tasks', label: 'Задачи', icon: ListTodo, demo: false },
   { to: '/seasons', label: 'Сезоны', icon: Library, demo: false },
   { to: '/topics', label: 'Контент-план', icon: Clapperboard, demo: false },
   { to: '/styles', label: 'Стиль', icon: Palette, demo: false },
@@ -25,7 +28,10 @@ export const NAV = [
 ] as const
 
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  const email = useSession()?.user.email ?? '—'
+  const session = useSession()
+  const email = session?.user.email ?? '—'
+  // Открытые задачи на мне — счётчик у пункта «Задачи»
+  const myTasks = useData().tasks.filter((t) => t.assignee === session?.user.id && isOpen(t)).length
 
   return (
     <aside className={cn('flex shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-200', collapsed ? 'w-16' : 'w-60')}>
@@ -54,6 +60,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
               <>
                 <Icon className={cn('size-4 shrink-0', isActive && 'text-accent-hover')} />
                 {!collapsed && <span className="truncate">{label}</span>}
+                {to === '/tasks' && myTasks > 0 && (
+                  <span className={cn('rounded-full bg-accent px-1.5 text-[10px] leading-4 font-semibold text-white', collapsed ? 'absolute top-0.5 right-1' : 'ml-auto')} title="Открытые задачи на мне">
+                    {myTasks}
+                  </span>
+                )}
                 {!collapsed && demo && (
                   <span className="ml-auto rounded bg-gold/10 px-1.5 text-[10px] font-medium text-gold" title="Нет таблицы в БД — данные не сохраняются">
                     демо

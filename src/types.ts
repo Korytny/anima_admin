@@ -146,6 +146,39 @@ export interface ProcessSettings {
   prompt?: string
 }
 
+/** Сообщение в переписке задачи (tasks.comments). */
+export interface TaskComment {
+  author: string // auth.users.id
+  name: string
+  text: string
+  at: string
+}
+
+export type TaskStatus = 'open' | 'in_progress' | 'review' | 'done'
+
+/** public.tasks — задача команды (supabase/tasks.sql). */
+export interface Task {
+  id: string
+  title: string
+  description: string | null
+  assignee: string | null // auth.users.id
+  status: TaskStatus | string
+  topic_id: string | null
+  scene_id: string | null
+  character_id: string | null
+  comments: TaskComment[]
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Участник команды — строка admin_users (+ email, name из supabase/tasks.sql). */
+export interface TeamMember {
+  user_id: string
+  email: string | null
+  name: string | null
+}
+
 // ---- Ниже — сущности без таблиц в БД (пока демо, in-memory)
 
 export type LlmProvider = 'openai' | 'anthropic' | 'google' | 'openrouter'

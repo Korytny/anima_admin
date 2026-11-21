@@ -106,7 +106,7 @@ try {
         ref_tags: refs.map((r) => r.tag),
         // сколько #ref оставить; лишние n8n удаляет с конца вместе со входом images.imageN
         ref_count: refs.length,
-        // → #prompt (процесс без персонажей, если ref_count = 0: frame-0ref.json)
+        // → #prompt (тот же процесс и без персонажей: при ref_count = 0 все #ref удаляются)
         prompt,
         missing,
         // → scenes.speaking_character_voice / speaker_voice_profile

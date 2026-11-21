@@ -4,7 +4,7 @@ import { api } from '@/api'
 import { requestLocationMusic, requestMontage, requestSceneAudio, requestSceneImage, requestSceneVideo } from '@/api/pipeline'
 import { NEW_SEASON_TITLE, NEW_TOPIC_TITLE } from '@/api/supabase'
 import { uniqueFolder } from '@/lib/media'
-import type { Agent, Character, Scene, Season, Topic } from '@/types'
+import type { Agent, Character, Scene, Season, Task, TaskComment, TeamMember, Topic } from '@/types'
 
 // Пайплайн (n8n и т.п.) пишет в БД сам — периодически подтягиваем изменения.
 // Пока что-то генерируется — чаще.
@@ -43,12 +43,15 @@ interface DataState {
   characters: Character[]
   agents: Agent[]
   seasons: Season[]
+  /** Задачи команды и сама команда (supabase/tasks.sql; нет таблицы — пусто) */
+  tasks: Task[]
+  team: TeamMember[]
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function useDataStore() {
-  const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], characters: [], agents: [], seasons: [] })
+  const [state, setState] = useState<DataState>({ loading: true, refreshing: false, error: null, topics: [], scenes: [], characters: [], agents: [], seasons: [], tasks: [], team: [] })
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -123,8 +126,16 @@ function useDataStore() {
   const load = useCallback(async (silent = false) => {
     setState((s) => ({ ...s, refreshing: true }))
     try {
-      const [topics, scenes, characters, agents, seasons] = await Promise.all([api.listTopics(), api.listScenes(), api.listCharacters(), api.listAgents(), api.listSeasons()])
-      setState({ loading: false, refreshing: false, error: null, topics, scenes, characters, agents, seasons })
+      const [topics, scenes, characters, agents, seasons, tasks, team] = await Promise.all([
+        api.listTopics(),
+        api.listScenes(),
+        api.listCharacters(),
+        api.listAgents(),
+        api.listSeasons(),
+        api.listTasks().catch(() => [] as Task[]), // нет таблицы tasks (не выполнен supabase/tasks.sql) — без задач
+        api.listTeam().catch(() => [] as TeamMember[]),
+      ])
+      setState({ loading: false, refreshing: false, error: null, topics, scenes, characters, agents, seasons, tasks, team })
       void assignFolders(topics)
       void assignSeasonFolders(seasons, topics)
     } catch (e) {
@@ -327,6 +338,25 @@ function useDataStore() {
         const x = await run(api.createSeason(data), 'Сезон создан')
         if (x) setState((s) => ({ ...s, seasons: [...s.seasons, x] }))
         return x
+      },
+      async createTask(data: Partial<Task>) {
+        const t = await run(api.createTask(data), 'Задача создана')
+        if (t) setState((s) => ({ ...s, tasks: [t, ...s.tasks] }))
+        return t
+      },
+      async updateTask(id: string, patch: Partial<Task>, silent = false) {
+        const t = await run(api.updateTask(id, patch), silent ? undefined : 'Сохранено')
+        if (t) setState((s) => ({ ...s, tasks: s.tasks.map((x) => (x.id === id ? t : x)) }))
+        return t
+      },
+      async deleteTask(id: string) {
+        const ok = await run(api.deleteTask(id).then(() => true), 'Задача удалена')
+        if (ok) setState((s) => ({ ...s, tasks: s.tasks.filter((x) => x.id !== id) }))
+      },
+      async addTaskComment(id: string, comment: TaskComment) {
+        const t = await run(api.addTaskComment(id, comment))
+        if (t) setState((s) => ({ ...s, tasks: s.tasks.map((x) => (x.id === id ? t : x)) }))
+        return t
       },
       async updateSeason(id: string, patch: Partial<Season>) {
         const x = await run(api.updateSeason(id, patch), 'Сохранено')

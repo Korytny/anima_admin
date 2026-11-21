@@ -17,6 +17,7 @@ import { MontagePage } from '@/pages/Montage'
 import { MusicPage } from '@/pages/Music'
 import { ComputePage } from '@/pages/Compute'
 import { DiagnosticsPage } from '@/pages/Diagnostics'
+import { TasksPage } from '@/pages/Tasks'
 import { StylesPage } from '@/pages/Styles'
 import { ProcessesPage } from '@/pages/Processes'
 import { ScriptPage } from '@/pages/Script'
@@ -49,6 +50,7 @@ const router = createBrowserRouter([
       { path: 'processes', element: <ProcessesPage /> },
       { path: 'compute', element: <ComputePage /> },
       { path: 'diagnostics', element: <DiagnosticsPage /> },
+      { path: 'tasks', element: <TasksPage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/topics" replace /> },
     ],

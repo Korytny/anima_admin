@@ -45,7 +45,7 @@ try {
         ref_count: refs.ref_count,
         output_prefix,
         style: STYLES[season.style] ?? '',
-        workflow_file: refs.ref_count ? 'frame-refs.json' : 'frame-0ref.json',
+        workflow_file: 'frame-refs.json', // один процесс и с персонажами, и без: лишние #ref заполнитель удаляет
       },
     },
   ]

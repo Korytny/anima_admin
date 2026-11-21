@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { AudioLines, Clapperboard, Copy, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { AudioLines, Clapperboard, Copy, ListTodo, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { useSession } from '@/components/AuthGate'
 import type { Character, Scene, Season, Topic } from '@/types'
 import { useNavigate } from 'react-router-dom'
 import { GENERATING, characterImages, characterTitle, sceneCharacters, seasonCharacters, useData } from '@/store/data'
 import { audioConfigured, pipelineConfigured, videoConfigured } from '@/api/pipeline'
-import { absPath, mediaUrl, outputPrefix, scenePath } from '@/lib/media'
+import { absPath, mediaUrl, outputPrefix, sceneCode, scenePath } from '@/lib/media'
 import { listVariants, variantPrefix, type Variant } from '@/api/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
@@ -144,7 +145,8 @@ export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene
 }
 
 function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; onDelete: (id: string) => void }) {
-  const { updateScene, updateScenes, generateSceneImages, topics, characters, seasons } = useData()
+  const { updateScene, updateScenes, generateSceneImages, topics, characters, seasons, team, tasks, createTask } = useData()
+  const me = useSession()?.user.id
   const navigate = useNavigate()
   const seasonId = topics.find((t) => t.topic_id === scene.topic)?.season_id
   const cast = useMemo(() => sceneCharacters(scene, seasonCharacters(seasonId, characters)), [scene, characters, seasonId])
@@ -348,6 +350,20 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
         ) : (
           <>
             {generateBtn}
+            <Button
+              variant="outline"
+              title={`Создать задачу по этому шоту${team.length > 1 ? ' и назначить другому участнику' : ''}`}
+              onClick={async () => {
+                const other = team.find((m) => m.user_id !== me)?.user_id ?? me ?? null
+                const t = await createTask({ title: `Шот ${sceneCode(scene)}: выбрать лучший кадр`, scene_id: scene.scene_id, topic_id: scene.topic, assignee: other })
+                if (t) navigate(`/tasks?who=all&task=${t.id}`)
+              }}
+            >
+              <ListTodo /> Задача
+              {tasks.filter((t) => t.scene_id === scene.scene_id && t.status !== 'done').length > 0 && (
+                <span className="rounded-full bg-accent/20 px-1.5 text-[10px] text-accent-hover">{tasks.filter((t) => t.scene_id === scene.scene_id && t.status !== 'done').length}</span>
+              )}
+            </Button>
             <Button variant="ghost" size="icon" title="Скопировать ссылку" aria-label="Скопировать ссылку" onClick={() => copyText(location.href)}>
               <Copy />
             </Button>
