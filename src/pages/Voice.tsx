@@ -6,15 +6,15 @@ import type { Scene } from '@/types'
 import { useData, useScenesByTopic } from '@/store/data'
 import { audioConfigured } from '@/api/pipeline'
 import { mediaUrl } from '@/lib/media'
-import { needsAudio, voiceInVideo } from '@/lib/status'
+import { isTalkLine, needsAudio } from '@/lib/status'
 import { storageGet } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
 import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
 import { Button, ConfirmDialog, EmptyState } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
-/** Озвучка серии: шоты, которым нужна озвучка (needsAudio — в основном рассказчик). Реплики персонажей в #talk-шотах говорит видео — их здесь нет.
- *  Результат n8n пишет в audio_file / audio_duration. */
+/** Озвучка серии: шоты с текстом. Рассказчик озвучивается всегда («Озвучить неозвученное»); реплики персонажей в #talk —
+ *  по выбору, кнопкой в строке: с озвучкой видео подстроит губы под неё, без — голос сделает видео. Результат — audio_file / audio_duration. */
 export function VoicePage() {
   const { topicId } = useParams()
   if (!topicId) {
@@ -31,8 +31,8 @@ function Voice({ topicId }: { topicId: string }) {
   const [params, setParams] = useSearchParams()
   const { loading, deleteScenes, runJobs, isRunning } = useData()
   const all = useScenesByTopic().get(topicId) ?? []
-  const lines = useMemo(() => all.filter(needsAudio), [all])
-  const inVideo = all.filter(voiceInVideo).length
+  const lines = useMemo(() => all.filter((s) => !!s.dialogue_text?.trim()), [all])
+  const talkLines = lines.filter(isTalkLine).length
   const voiced = lines.filter((s) => s.audio_file).length
   const [selection, setSelection] = useState<RowSelectionState>({})
   const [confirm, setConfirm] = useState<string | null>(null)
@@ -153,7 +153,7 @@ function Voice({ topicId }: { topicId: string }) {
     [isRunning, runJobs],
   )
 
-  const unvoiced = lines.filter((s) => !s.audio_file && !isRunning('audio', s.scene_id)).map((s) => s.scene_id)
+  const unvoiced = lines.filter((s) => needsAudio(s) && !s.audio_file && !isRunning('audio', s.scene_id)).map((s) => s.scene_id)
 
   return (
     <div className="flex h-full min-h-0">
@@ -167,7 +167,11 @@ function Voice({ topicId }: { topicId: string }) {
             <span>
               Озвучено <b className="text-fg">{voiced}</b>/{lines.length}
             </span>
-            {inVideo > 0 && <span title="Реплики персонажей в #talk-шотах: голос и губы делает видео (MiniMax H3), отдельная озвучка не нужна">+ {inVideo} в видео</span>}
+            {talkLines > 0 && (
+              <span title="Реплики персонажей (#talk) озвучиваются по выбору — кнопкой в строке: с озвучкой видео подстроит губы под неё, без — голос сделает само видео. «Озвучить неозвученное» их не берёт">
+                из них реплик персонажей <b className="text-fg">{talkLines}</b>
+              </span>
+            )}
           </div>
         </div>
 

@@ -1,8 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // video_vars.js — n8n Code-узел «Vars» конвейера видео шота (Mode: Run Once for All Items)
 //
-// Видео шота = кадр раскадровки (первый кадр) + движение + звук; MiniMax H3 i2v, процесс workflows/video-i2v.json.
-// Звук H3 делает сам в том же проходе: шумы, а у #talk-шотов — реплику голосом с движением губ (EN и RU проверены).
+// Видео шота = кадр раскадровки (первый кадр) + движение + звук; MiniMax H3 i2v.
+// Голос #talk-шота — на выбор, по шоту:
+//   • у шота есть audio_file (озвучка Google, голос из карточки персонажа) → процесс video-i2v-voice.json:
+//     дорожка подаётся в H3 (PixaromaH3AudioSync), видео подстраивает губы; длина — по озвучке;
+//   • озвучки нет → процесс video-i2v.json: реплику голосом и губы H3 делает сам, шумы тоже.
 // Рассказчик (Narrator) в видео не звучит — его голос накладывается при монтаже.
 //
 // Выход (для fill_workflow.js и узлов ниже):
@@ -10,8 +13,9 @@
 //   '#image.image'  — кадр в папке input ComfyUI видео-сервера (тот же относительный путь, что base_image_url)
 //   '#size.length'  — длина в кадрах 24 fps (H3: 5 + 17k; 124 ≈ 5.2 с … 362 ≈ 15 с)
 //   output_prefix   — anima/<сезон>/<серия>/<NN>-<шот> (#save на видео-сервере)
-//   frame_path, frame_dir, frame_file — откуда взять кадр (/media админки) и куда загрузить на видео-сервер
-//   comfy_url       — ComfyUI видео-сервера; local_comfy_url — свой ComfyUI, через него mp4 кладётся в output .99
+//   frame_dir, frame_file — кадр: взять из своего ComfyUI (/view, output) и загрузить на видео-сервер (input, тот же путь)
+//   has_track, audio_dir, audio_name, '#audio.audio' — дорожка голоса (только у #talk с audio_file), так же, как кадр
+//   comfy_url       — ComfyUI видео-сервера; local_comfy_url — свой ComfyUI (.99): из него берём файлы, в него кладём mp4
 //   scene_id, seconds, workflow_file
 // Узлы: SCENE_NODE, TOPIC_NODE, SEASON_NODE, CHARACTERS_NODE (Supabase).
 // ═══════════════════════════════════════════════════════════════════════════
@@ -66,10 +70,15 @@ try {
   const line = clean(scene.dialogue_text)
   const isNarrator = norm(speakerTag) === NARRATOR
   const talks = !!line && !!speakerTag && !isNarrator && scene.shot_type === 'talk'
+  const track = talks ? clean(scene.audio_file).replace(/\\/g, '/').replace(/^\/+/, '') : ''
+  const has_track = !!track
 
   // ── Звук ──
   let sound
-  if (talks) {
+  if (has_track) {
+    // Звук задан дорожкой — описываем только губы
+    sound = `${speakerTag} speaks, lips moving precisely in sync with the voice track.`
+  } else if (talks) {
     const c = byName.get(norm(speakerTag))
     const who = clean(String(c?.text_prompt ?? '').split(',').slice(0, 2).join(','))
     const tone = clean(scene.dialogue_direction || scene.speaker_voice_tone)
@@ -81,9 +90,9 @@ try {
     sound = `Nobody speaks, mouths stay closed. Sound: natural ambience${scene.noice ? ` — ${clean(scene.noice)}` : ''}, no speech, no music.`
   }
 
-  // ── Длина: реплика или текст рассказчика должны поместиться ──
+  // ── Длина: по дорожке голоса; иначе реплика или текст рассказчика должны поместиться ──
   let seconds = Number(scene.audio_duration) || Number(scene.time) || 4
-  if (line) seconds = Math.max(seconds, words(line) / WORDS_PER_SEC + (talks ? 1.2 : 0.6))
+  if (line && !has_track) seconds = Math.max(seconds, words(line) / WORDS_PER_SEC + (talks ? 1.2 : 0.6))
   const length = toFrames(seconds)
 
   const prompt = [STYLE_LINE, motion, sound].join(' ')
@@ -102,14 +111,17 @@ try {
         output_dir: dir, // куда положить mp4 на .99 (output/<dir>)
         started_at: Date.now(), // video_result.js сдаётся через TIMEOUT_MIN
         seconds: Math.round((length / FPS) * 10) / 10,
-        frame_path: frame,
         frame_dir,
         frame_file,
         '#image.image': frame, // на видео-сервере кадр загружается в input/<frame_dir>/<frame_file>
         '#size.length': length,
+        has_track,
+        audio_dir: track.split('/').slice(0, -1).join('/'),
+        audio_name: track.split('/').pop(),
+        ...(has_track ? { '#audio.audio': track } : {}), // так же: input/<audio_dir>/<audio_name> на видео-сервере
         comfy_url: COMFY_URL,
         local_comfy_url: LOCAL_COMFY_URL,
-        workflow_file: 'video-i2v.json',
+        workflow_file: has_track ? 'video-i2v-voice.json' : 'video-i2v.json',
       },
     },
   ]

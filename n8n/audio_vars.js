@@ -1,7 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // audio_vars.js — n8n Code-узел «Vars» конвейера озвучки шота (n8n на .99). Mode: Run Once for All Items.
 //
-// Озвучка шота = текст шота (dialogue_text: рассказчик или реплика) голосом говорящего через tts-proxy
+// Озвучка шота = текст шота (dialogue_text: рассказчик или реплика) голосом говорящего через tts-proxy.
+// У #talk-шота озвучка — по выбору: если она есть, видео подстроит под неё губы (video_vars.js), нет — голос сделает видео.
+//
 // (n8n на 88.99 ходит в Google Gemini TTS и отдаёт wav). Файл ляжет рядом с кадрами серии.
 //
 // Голос: scenes.speaking_character_voice (ручная замена на шоте) → characters.voice_name говорящего.
@@ -42,8 +44,6 @@ try {
   if (!text) throw new Error('У шота нет текста (dialogue_text) — озвучивать нечего')
   const speaker = clean(scene.speaking_character)
   if (!speaker) throw new Error('У шота не указан говорящий (speaking_character)')
-  if (scene.shot_type === 'talk' && norm(speaker) !== NARRATOR)
-    throw new Error('#talk-шот: реплику говорит видео (H3, голос и губы) — отдельная озвучка не нужна')
 
   const byName = new Map()
   try {

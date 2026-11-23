@@ -19,6 +19,7 @@ export const LABELS: Record<string, LabelSpec> = {
   '#seed': { label: '#seed', fields: ['seed', 'noise_seed'], what: 'seed' },
   '#size': { label: '#size', fields: ['width', 'height'], what: 'размер кадра (у видео ещё length — n8n считает по реплике)' },
   '#image': { label: '#image', fields: ['image'], what: 'первый кадр видео — кадр раскадровки шота' },
+  '#audio': { label: '#audio', fields: ['audio'], what: 'дорожка голоса (озвучка шота) — видео подстроит под неё губы' },
   '#save': { label: '#save', fields: ['filename_prefix'], what: 'путь результата anima/<сезон>/<серия>/<код>' },
 }
 
@@ -44,6 +45,13 @@ export const SLOTS: Slot[] = [
     title: 'Видео шота',
     description: 'Кадр раскадровки → видео со звуком (MiniMax H3 i2v, сервер Таиланд). У #talk-шотов реплика звучит голосом персонажа; длину n8n считает по реплике',
     required: ['#prompt', '#image', '#size', '#save'],
+    optional: ['#seed', '#lora'],
+  },
+  {
+    file: 'video-i2v-voice.json',
+    title: 'Видео шота с голосом',
+    description: 'То же видео, но под готовую озвучку: #talk-шот с audio_file — дорожка подаётся в H3 (PixaromaH3AudioSync), губы подстраиваются под неё, длина — по озвучке',
+    required: ['#prompt', '#image', '#audio', '#size', '#save'],
     optional: ['#seed', '#lora'],
   },
   { file: 'character.json', title: 'Портрет персонажа', description: 'Референс персонажа для библиотеки сезона', required: ['#prompt', '#save'], optional: ['#lora', '#seed', '#size', '#negative'] },

@@ -19,6 +19,7 @@ const RUNTIME = (label: string, field: string) =>
   /^#[a-z_]+\d+$/.test(label) ||
   (label === '#save' && field === 'filename_prefix') ||
   (label === '#image' && field === 'image') ||
+  (label === '#audio' && field === 'audio') ||
   (label === '#size' && field === 'length') ||
   (label === '#seed' && ['seed', 'noise_seed'].includes(field))
 

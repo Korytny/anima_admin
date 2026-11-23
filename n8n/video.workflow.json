@@ -134,7 +134,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// video_vars.js — n8n Code-узел «Vars» конвейера видео шота (Mode: Run Once for All Items)\n//\n// Видео шота = кадр раскадровки (первый кадр) + движение + звук; MiniMax H3 i2v, процесс workflows/video-i2v.json.\n// Звук H3 делает сам в том же проходе: шумы, а у #talk-шотов — реплику голосом с движением губ (EN и RU проверены).\n// Рассказчик (Narrator) в видео не звучит — его голос накладывается при монтаже.\n//\n// Выход (для fill_workflow.js и узлов ниже):\n//   prompt          — промпт видео (→ #prompt)\n//   '#image.image'  — кадр в папке input ComfyUI видео-сервера (тот же относительный путь, что base_image_url)\n//   '#size.length'  — длина в кадрах 24 fps (H3: 5 + 17k; 124 ≈ 5.2 с … 362 ≈ 15 с)\n//   output_prefix   — anima/<сезон>/<серия>/<NN>-<шот> (#save на видео-сервере)\n//   frame_path, frame_dir, frame_file — откуда взять кадр (/media админки) и куда загрузить на видео-сервер\n//   comfy_url       — ComfyUI видео-сервера; local_comfy_url — свой ComfyUI, через него mp4 кладётся в output .99\n//   scene_id, seconds, workflow_file\n// Узлы: SCENE_NODE, TOPIC_NODE, SEASON_NODE, CHARACTERS_NODE (Supabase).\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst SCENE_NODE = 'Scene'\nconst TOPIC_NODE = 'Topic'\nconst SEASON_NODE = 'Season'\nconst CHARACTERS_NODE = 'Characters'\n\n// ── Настройки ──────────────────────────────────────────────────────────────\nconst COMFY_URL = 'http://127.0.0.1:8189'       // Таиланд, RTX 3080 20 GB (туннель thai-tunnel в pm2 на .99)\nconst LOCAL_COMFY_URL = 'http://127.0.0.1:8188' // свой ComfyUI: /upload/image?type=output пишет mp4 в output .99\nconst NARRATOR = 'NARRATOR'                     // тег рассказчика (после norm): его текст не озвучивается в видео\nconst FPS = 24\nconst MIN_FRAMES = 124                          // ≈ 5.2 с — нижняя граница обученного диапазона H3\nconst MAX_FRAMES = 362                          // ≈ 15 с\nconst WORDS_PER_SEC = 2.4                       // темп реплики\nconst STYLE_LINE = 'Keep the exact art style, colors, characters and composition of the first frame.'\n// ───────────────────────────────────────────────────────────────────────────\n\nconst norm = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')\nconst clean = (s) => String(s ?? '').replace(/\\s+/g, ' ').trim()\nconst words = (s) => clean(s).split(' ').filter(Boolean).length\nconst toFrames = (sec) => {\n  const raw = Math.max(5, Math.round(sec * FPS))\n  const valid = raw + ((17 - ((raw - 5) % 17)) % 17) // вверх до 5 + 17k\n  return Math.min(MAX_FRAMES, Math.max(MIN_FRAMES, valid))\n}\nconst isCyrillic = (s) => /[А-Яа-яЁё]/.test(s)\n\ntry {\n  const scene = $(SCENE_NODE).first().json\n  if (!scene?.scene_id) throw new Error(`Нет шота в узле «${SCENE_NODE}»`)\n  const topic = $(TOPIC_NODE).first().json\n  const season = $(SEASON_NODE).first().json ?? {}\n\n  const frame = clean(scene.base_image_url).replace(/\\\\/g, '/').replace(/^\\/+/, '')\n  if (!frame) throw new Error('У шота нет кадра (base_image_url) — сначала сгенерируйте фото')\n  if (/^https?:/i.test(frame)) throw new Error('base_image_url — полный URL; нужен путь относительно ComfyUI/output')\n  const motion = clean(scene.action_prompt || scene.action)\n  if (!motion) throw new Error('У шота нет описания движения (action_prompt) — сначала Постановщик')\n\n  // Персонажи сезона: кто говорит (для описания голоса)\n  const byName = new Map()\n  try {\n    for (const { json: c } of $(CHARACTERS_NODE).all()) if (c?.name) byName.set(norm(c.name), c)\n  } catch {\n    /* без узла персонажей — голос описываем только по реплике */\n  }\n\n  const speakerTag = clean(scene.speaking_character)\n  const line = clean(scene.dialogue_text)\n  const isNarrator = norm(speakerTag) === NARRATOR\n  const talks = !!line && !!speakerTag && !isNarrator && scene.shot_type === 'talk'\n\n  // ── Звук ──\n  let sound\n  if (talks) {\n    const c = byName.get(norm(speakerTag))\n    const who = clean(String(c?.text_prompt ?? '').split(',').slice(0, 2).join(','))\n    const tone = clean(scene.dialogue_direction || scene.speaker_voice_tone)\n    const lang = isCyrillic(line) ? 'Russian' : 'English'\n    sound =\n      `${speakerTag}${who ? ` (${who})` : ''} speaks${tone ? ` in a ${tone} voice` : ''}, in ${lang}, lips moving in sync: \"${line}\" ` +\n      `Sound: only the speaker's voice and quiet ambience${scene.noice ? ` (${clean(scene.noice)})` : ''}, no music.`\n  } else {\n    sound = `Nobody speaks, mouths stay closed. Sound: natural ambience${scene.noice ? ` — ${clean(scene.noice)}` : ''}, no speech, no music.`\n  }\n\n  // ── Длина: реплика или текст рассказчика должны поместиться ──\n  let seconds = Number(scene.audio_duration) || Number(scene.time) || 4\n  if (line) seconds = Math.max(seconds, words(line) / WORDS_PER_SEC + (talks ? 1.2 : 0.6))\n  const length = toFrames(seconds)\n\n  const prompt = [STYLE_LINE, motion, sound].join(' ')\n\n  const dir = `anima/${season.folder || topic.season_id}/${topic.folder || topic.topic_id}`\n  const output_prefix = `${dir}/${String(scene.scena ?? 0).padStart(2, '0')}-${scene.shot_num ?? 1}`\n  const frame_file = frame.split('/').pop()\n  const frame_dir = frame.split('/').slice(0, -1).join('/')\n\n  return [\n    {\n      json: {\n        scene_id: scene.scene_id,\n        prompt,\n        output_prefix,\n        output_dir: dir, // куда положить mp4 на .99 (output/<dir>)\n        started_at: Date.now(), // video_result.js сдаётся через TIMEOUT_MIN\n        seconds: Math.round((length / FPS) * 10) / 10,\n        frame_path: frame,\n        frame_dir,\n        frame_file,\n        '#image.image': frame, // на видео-сервере кадр загружается в input/<frame_dir>/<frame_file>\n        '#size.length': length,\n        comfy_url: COMFY_URL,\n        local_comfy_url: LOCAL_COMFY_URL,\n        workflow_file: 'video-i2v.json',\n      },\n    },\n  ]\n} catch (error) {\n  return [{ json: { error: error.message } }]\n}\n"
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// video_vars.js — n8n Code-узел «Vars» конвейера видео шота (Mode: Run Once for All Items)\n//\n// Видео шота = кадр раскадровки (первый кадр) + движение + звук; MiniMax H3 i2v.\n// Голос #talk-шота — на выбор, по шоту:\n//   • у шота есть audio_file (озвучка Google, голос из карточки персонажа) → процесс video-i2v-voice.json:\n//     дорожка подаётся в H3 (PixaromaH3AudioSync), видео подстраивает губы; длина — по озвучке;\n//   • озвучки нет → процесс video-i2v.json: реплику голосом и губы H3 делает сам, шумы тоже.\n// Рассказчик (Narrator) в видео не звучит — его голос накладывается при монтаже.\n//\n// Выход (для fill_workflow.js и узлов ниже):\n//   prompt          — промпт видео (→ #prompt)\n//   '#image.image'  — кадр в папке input ComfyUI видео-сервера (тот же относительный путь, что base_image_url)\n//   '#size.length'  — длина в кадрах 24 fps (H3: 5 + 17k; 124 ≈ 5.2 с … 362 ≈ 15 с)\n//   output_prefix   — anima/<сезон>/<серия>/<NN>-<шот> (#save на видео-сервере)\n//   frame_dir, frame_file — кадр: взять из своего ComfyUI (/view, output) и загрузить на видео-сервер (input, тот же путь)\n//   has_track, audio_dir, audio_name, '#audio.audio' — дорожка голоса (только у #talk с audio_file), так же, как кадр\n//   comfy_url       — ComfyUI видео-сервера; local_comfy_url — свой ComfyUI (.99): из него берём файлы, в него кладём mp4\n//   scene_id, seconds, workflow_file\n// Узлы: SCENE_NODE, TOPIC_NODE, SEASON_NODE, CHARACTERS_NODE (Supabase).\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst SCENE_NODE = 'Scene'\nconst TOPIC_NODE = 'Topic'\nconst SEASON_NODE = 'Season'\nconst CHARACTERS_NODE = 'Characters'\n\n// ── Настройки ──────────────────────────────────────────────────────────────\nconst COMFY_URL = 'http://127.0.0.1:8189'       // Таиланд, RTX 3080 20 GB (туннель thai-tunnel в pm2 на .99)\nconst LOCAL_COMFY_URL = 'http://127.0.0.1:8188' // свой ComfyUI: /upload/image?type=output пишет mp4 в output .99\nconst NARRATOR = 'NARRATOR'                     // тег рассказчика (после norm): его текст не озвучивается в видео\nconst FPS = 24\nconst MIN_FRAMES = 124                          // ≈ 5.2 с — нижняя граница обученного диапазона H3\nconst MAX_FRAMES = 362                          // ≈ 15 с\nconst WORDS_PER_SEC = 2.4                       // темп реплики\nconst STYLE_LINE = 'Keep the exact art style, colors, characters and composition of the first frame.'\n// ───────────────────────────────────────────────────────────────────────────\n\nconst norm = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')\nconst clean = (s) => String(s ?? '').replace(/\\s+/g, ' ').trim()\nconst words = (s) => clean(s).split(' ').filter(Boolean).length\nconst toFrames = (sec) => {\n  const raw = Math.max(5, Math.round(sec * FPS))\n  const valid = raw + ((17 - ((raw - 5) % 17)) % 17) // вверх до 5 + 17k\n  return Math.min(MAX_FRAMES, Math.max(MIN_FRAMES, valid))\n}\nconst isCyrillic = (s) => /[А-Яа-яЁё]/.test(s)\n\ntry {\n  const scene = $(SCENE_NODE).first().json\n  if (!scene?.scene_id) throw new Error(`Нет шота в узле «${SCENE_NODE}»`)\n  const topic = $(TOPIC_NODE).first().json\n  const season = $(SEASON_NODE).first().json ?? {}\n\n  const frame = clean(scene.base_image_url).replace(/\\\\/g, '/').replace(/^\\/+/, '')\n  if (!frame) throw new Error('У шота нет кадра (base_image_url) — сначала сгенерируйте фото')\n  if (/^https?:/i.test(frame)) throw new Error('base_image_url — полный URL; нужен путь относительно ComfyUI/output')\n  const motion = clean(scene.action_prompt || scene.action)\n  if (!motion) throw new Error('У шота нет описания движения (action_prompt) — сначала Постановщик')\n\n  // Персонажи сезона: кто говорит (для описания голоса)\n  const byName = new Map()\n  try {\n    for (const { json: c } of $(CHARACTERS_NODE).all()) if (c?.name) byName.set(norm(c.name), c)\n  } catch {\n    /* без узла персонажей — голос описываем только по реплике */\n  }\n\n  const speakerTag = clean(scene.speaking_character)\n  const line = clean(scene.dialogue_text)\n  const isNarrator = norm(speakerTag) === NARRATOR\n  const talks = !!line && !!speakerTag && !isNarrator && scene.shot_type === 'talk'\n  const track = talks ? clean(scene.audio_file).replace(/\\\\/g, '/').replace(/^\\/+/, '') : ''\n  const has_track = !!track\n\n  // ── Звук ──\n  let sound\n  if (has_track) {\n    // Звук задан дорожкой — описываем только губы\n    sound = `${speakerTag} speaks, lips moving precisely in sync with the voice track.`\n  } else if (talks) {\n    const c = byName.get(norm(speakerTag))\n    const who = clean(String(c?.text_prompt ?? '').split(',').slice(0, 2).join(','))\n    const tone = clean(scene.dialogue_direction || scene.speaker_voice_tone)\n    const lang = isCyrillic(line) ? 'Russian' : 'English'\n    sound =\n      `${speakerTag}${who ? ` (${who})` : ''} speaks${tone ? ` in a ${tone} voice` : ''}, in ${lang}, lips moving in sync: \"${line}\" ` +\n      `Sound: only the speaker's voice and quiet ambience${scene.noice ? ` (${clean(scene.noice)})` : ''}, no music.`\n  } else {\n    sound = `Nobody speaks, mouths stay closed. Sound: natural ambience${scene.noice ? ` — ${clean(scene.noice)}` : ''}, no speech, no music.`\n  }\n\n  // ── Длина: по дорожке голоса; иначе реплика или текст рассказчика должны поместиться ──\n  let seconds = Number(scene.audio_duration) || Number(scene.time) || 4\n  if (line && !has_track) seconds = Math.max(seconds, words(line) / WORDS_PER_SEC + (talks ? 1.2 : 0.6))\n  const length = toFrames(seconds)\n\n  const prompt = [STYLE_LINE, motion, sound].join(' ')\n\n  const dir = `anima/${season.folder || topic.season_id}/${topic.folder || topic.topic_id}`\n  const output_prefix = `${dir}/${String(scene.scena ?? 0).padStart(2, '0')}-${scene.shot_num ?? 1}`\n  const frame_file = frame.split('/').pop()\n  const frame_dir = frame.split('/').slice(0, -1).join('/')\n\n  return [\n    {\n      json: {\n        scene_id: scene.scene_id,\n        prompt,\n        output_prefix,\n        output_dir: dir, // куда положить mp4 на .99 (output/<dir>)\n        started_at: Date.now(), // video_result.js сдаётся через TIMEOUT_MIN\n        seconds: Math.round((length / FPS) * 10) / 10,\n        frame_dir,\n        frame_file,\n        '#image.image': frame, // на видео-сервере кадр загружается в input/<frame_dir>/<frame_file>\n        '#size.length': length,\n        has_track,\n        audio_dir: track.split('/').slice(0, -1).join('/'),\n        audio_name: track.split('/').pop(),\n        ...(has_track ? { '#audio.audio': track } : {}), // так же: input/<audio_dir>/<audio_name> на видео-сервере\n        comfy_url: COMFY_URL,\n        local_comfy_url: LOCAL_COMFY_URL,\n        workflow_file: has_track ? 'video-i2v-voice.json' : 'video-i2v.json',\n      },\n    },\n  ]\n} catch (error) {\n  return [{ json: { error: error.message } }]\n}\n"
       },
       "name": "Vars",
       "type": "n8n-nodes-base.code",
@@ -182,7 +182,24 @@
     },
     {
       "parameters": {
-        "url": "=http://localhost:5173/media/{{ $json.frame_path }}",
+        "url": "={{ $('Vars').first().json.local_comfy_url }}/view",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filename",
+              "value": "={{ $('Vars').first().json.frame_file }}"
+            },
+            {
+              "name": "subfolder",
+              "value": "={{ $('Vars').first().json.frame_dir }}"
+            },
+            {
+              "name": "type",
+              "value": "output"
+            }
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -245,7 +262,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1980,
+        2640,
         300
       ],
       "id": "ee323d61-1d04-41a2-ace8-9433ff0c4517"
@@ -267,7 +284,7 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        2200,
+        2860,
         300
       ],
       "id": "4f65f14e-c040-4b91-bf40-346bca38788d",
@@ -287,7 +304,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2420,
+        3080,
         300
       ],
       "id": "49de6385-ecef-498a-8ddd-f6b4fa01c22b"
@@ -305,7 +322,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2640,
+        3300,
         300
       ],
       "id": "a78e563e-e466-448c-a804-e8d4e31039ae",
@@ -319,7 +336,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        2860,
+        3520,
         300
       ],
       "id": "72554c51-c970-4a80-9917-d1daaa67d551",
@@ -334,7 +351,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
+        3740,
         300
       ],
       "id": "bcd70b66-9167-43db-ad06-69980b2be37e",
@@ -348,7 +365,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3300,
+        3960,
         300
       ],
       "id": "c95400bd-8a3d-44d1-8687-0154a4356d2b"
@@ -383,7 +400,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3520,
+        4180,
         300
       ],
       "id": "494d1747-82f4-44ae-8ec4-8ac02d80295a"
@@ -418,7 +435,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3740,
+        4400,
         300
       ],
       "id": "9cad0109-de0e-42fb-aec2-7a8e1ba4e7e0"
@@ -455,7 +472,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3960,
+        4620,
         300
       ],
       "id": "e584dbbb-fbff-4d28-b9ac-69c6ecfc003c"
@@ -496,7 +513,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4180,
+        4840,
         300
       ],
       "id": "35d11add-eb0b-47c8-9272-7a598023514f"
@@ -531,7 +548,7 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        4400,
+        5060,
         300
       ],
       "id": "4a7c6698-805e-47f0-8158-56d621b0665d",
@@ -568,7 +585,7 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        3960,
+        4620,
         520
       ],
       "id": "c45fa354-4e90-4453-b7bb-afc3238b4597",
@@ -578,6 +595,114 @@
           "name": "Supabase account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "02459700-1822-460c-90f8-d5e259d72fa0",
+              "leftValue": "={{ $('Vars').first().json.has_track }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Has track?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        300
+      ],
+      "id": "2635897b-eeb7-4a88-921c-afaadc2b991e"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Vars').first().json.local_comfy_url }}/view",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filename",
+              "value": "={{ $('Vars').first().json.audio_name }}"
+            },
+            {
+              "name": "subfolder",
+              "value": "={{ $('Vars').first().json.audio_dir }}"
+            },
+            {
+              "name": "type",
+              "value": "output"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        120
+      ],
+      "id": "557f9d77-be2f-4f82-bc1f-9887942c2fd7"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Vars').first().json.comfy_url }}/upload/image",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "subfolder",
+              "value": "={{ $('Vars').first().json.audio_dir }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "overwrite",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "name": "Upload audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        120
+      ],
+      "id": "b3424eb4-ab76-4a95-8c45-f05e4573d883"
     }
   ],
   "connections": {
@@ -680,7 +805,7 @@
       "main": [
         [
           {
-            "node": "Workflow",
+            "node": "Has track?",
             "type": "main",
             "index": 0
           }
@@ -816,6 +941,46 @@
         [
           {
             "node": "Update scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has track?": {
+      "main": [
+        [
+          {
+            "node": "Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audio": {
+      "main": [
+        [
+          {
+            "node": "Upload audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload audio": {
+      "main": [
+        [
+          {
+            "node": "Workflow",
             "type": "main",
             "index": 0
           }

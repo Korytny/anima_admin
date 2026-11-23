@@ -94,7 +94,7 @@ function TopicScenes({ topicId }: { topicId: string }) {
       return p
     })
   const selectedIds = Object.keys(selection)
-  // Озвучка — только шотам, которым она нужна (реплики #talk говорит видео)
+  // Массовая озвучка — рассказчик и прочий текст; реплики персонажей (#talk) озвучивают по выбору, кнопкой на шоте
   const audioIds = all.filter((s) => selection[s.scene_id] && needsAudio(s)).map((s) => s.scene_id)
 
   const add = async () => {
@@ -366,7 +366,7 @@ function TopicScenes({ topicId }: { topicId: string }) {
                   disabled={!audioConfigured}
                   title={
                     audioConfigured
-                      ? `Озвучить выбранные шоты с текстом в n8n${audioIds.length < selectedIds.length ? ' (без немых и реплик, которые говорит видео)' : ''}`
+                      ? `Озвучить выбранные шоты с текстом в n8n${audioIds.length < selectedIds.length ? ' (без немых и реплик персонажей — их озвучивают по кнопке на шоте)' : ''}`
                       : 'Не задан VITE_N8N_AUDIO_WEBHOOK'
                   }
                   onClick={() => {

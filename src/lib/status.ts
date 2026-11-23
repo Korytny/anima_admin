@@ -61,10 +61,11 @@ export const SCENE_STAGE_ORDER = Object.keys(SCENE_STAGES) as SceneStage[]
 
 type VoiceScene = { dialogue_text: string | null; shot_type: string | null; speaking_character: string | null }
 const isNarrator = (name: string | null) => (name ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '') === 'NARRATOR'
-/** Реплику персонажа в #talk-шоте говорит само видео (MiniMax H3 — голос и губы); отдельная озвучка не нужна. */
-export const voiceInVideo = (s: VoiceScene) => s.shot_type === 'talk' && !!s.dialogue_text?.trim() && !isNarrator(s.speaking_character)
-/** Шоту нужна озвучка (Google TTS): есть текст и это не реплика, которую говорит видео. В основном — рассказчик. */
-export const needsAudio = (s: VoiceScene) => !!s.dialogue_text?.trim() && !voiceInVideo(s)
+/** Реплика персонажа в #talk-шоте. Голос — по выбору на шоте: есть озвучка (Google, голос из карточки) — видео
+ *  подстроит под неё губы; нет — реплику голосом скажет само видео (MiniMax H3). */
+export const isTalkLine = (s: VoiceScene) => s.shot_type === 'talk' && !!s.dialogue_text?.trim() && !isNarrator(s.speaking_character)
+/** Озвучку обязательно делать (массовые «Озвучить»): есть текст и это не реплика #talk (её озвучивают по кнопке на шоте). */
+export const needsAudio = (s: VoiceScene) => !!s.dialogue_text?.trim() && !isTalkLine(s)
 
 type StageScene = { visual_prompt: string | null; manual_prompt: string | null; base_image_url: string | null; dialogue_text: string | null; audio_file: string | null; video_file: string | null }
 
