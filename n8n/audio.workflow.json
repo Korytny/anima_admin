@@ -1,0 +1,478 @@
+{
+  "name": "audio",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ed53ac1b-2c76-4901-97c9-280d9141ff78",
+        "options": {}
+      },
+      "name": "Webhook озвучка",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "id": "66461150-3910-4de8-bcc4-70872bbe0e80",
+      "webhookId": "ed53ac1b-2c76-4901-97c9-280d9141ff78"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "scenes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "scene_id",
+              "keyValue": "={{ $json.body.scene_id }}"
+            }
+          ]
+        }
+      },
+      "name": "Scene",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ],
+      "id": "e42e6cbe-7ab1-48fe-ae0c-38e0ab668634",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "topics",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "topic_id",
+              "keyValue": "={{ $json.topic }}"
+            }
+          ]
+        }
+      },
+      "name": "Topic",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        300
+      ],
+      "id": "c6ee7bf7-63ce-4ce9-9840-f134382c3ee4",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "seasons",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.season_id }}"
+            }
+          ]
+        }
+      },
+      "name": "Season",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ],
+      "id": "63e78d87-f8ef-414c-91f8-be867a0c86d7",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "characters",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "season",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        }
+      },
+      "name": "Characters",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ],
+      "id": "a26cab75-b0d3-4404-aeab-2a1f101ab5b9",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// audio_vars.js — n8n Code-узел «Vars» конвейера озвучки шота (n8n на .99). Mode: Run Once for All Items.\n//\n// Озвучка шота = текст шота (dialogue_text: рассказчик или реплика) голосом говорящего через tts-proxy\n// (n8n на 88.99 ходит в Google Gemini TTS и отдаёт wav). Файл ляжет рядом с кадрами серии.\n//\n// Голос: scenes.speaking_character_voice (ручная замена на шоте) → characters.voice_name говорящего.\n// Подача (style): dialogue_direction шота / speaker_voice_tone + описание голоса персонажа (voice_profile).\n// Выход: scene_id, text, voice, style, tts_url, local_comfy_url, output_dir, file_name\n// Узлы: SCENE_NODE, TOPIC_NODE, SEASON_NODE, CHARACTERS_NODE (Supabase).\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst SCENE_NODE = 'Scene'\nconst TOPIC_NODE = 'Topic'\nconst SEASON_NODE = 'Season'\nconst CHARACTERS_NODE = 'Characters'\n\n// ── Настройки ──────────────────────────────────────────────────────────────\nconst TTS_URL = 'http://88.99.241.163:5678/webhook/3cce057a-d32b-45bf-80fc-616f7aaa3bba' // вебхук tts-proxy (n8n/tts_proxy.workflow.json)\nconst LOCAL_COMFY_URL = 'http://127.0.0.1:8188' // свой ComfyUI: /upload/image?type=output кладёт wav в output .99\nconst NARRATOR = 'NARRATOR'\nconst NARRATOR_STYLE = 'Say in a calm, warm, unhurried storyteller voice'\n// ───────────────────────────────────────────────────────────────────────────\n\nconst norm = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')\nconst clean = (s) => String(s ?? '').replace(/\\s+/g, ' ').trim()\nconst profileText = (p) => {\n  if (!p) return ''\n  if (typeof p === 'string') return clean(p)\n  if (typeof p === 'object') return clean(p.description ?? p.style ?? p.text ?? Object.values(p).filter((v) => typeof v === 'string').join(', '))\n  return ''\n}\n\ntry {\n  const scene = $(SCENE_NODE).first().json\n  if (!scene?.scene_id) throw new Error(`Нет шота в узле «${SCENE_NODE}»`)\n  const topic = $(TOPIC_NODE).first().json\n  const season = $(SEASON_NODE).first().json ?? {}\n\n  const text = clean(scene.dialogue_text)\n  if (!text) throw new Error('У шота нет текста (dialogue_text) — озвучивать нечего')\n  const speaker = clean(scene.speaking_character)\n  if (!speaker) throw new Error('У шота не указан говорящий (speaking_character)')\n\n  const byName = new Map()\n  try {\n    for (const { json: c } of $(CHARACTERS_NODE).all()) if (c?.name) byName.set(norm(c.name), c)\n  } catch {\n    /* узла нет — голос только из шота */\n  }\n  const character = byName.get(norm(speaker))\n  const voice = clean(scene.speaking_character_voice) || clean(character?.voice_name)\n  if (!voice)\n    throw new Error(`Нет голоса у «${speaker}»: впишите voice_name персонажу (Персонажи → карточка) или speaking_character_voice шоту`)\n\n  const tone = clean(scene.dialogue_direction || scene.speaker_voice_tone)\n  const profile = profileText(character?.voice_profile)\n  const isNarrator = norm(speaker) === NARRATOR\n  const base = isNarrator ? NARRATOR_STYLE + (tone ? `, ${tone}` : '') : tone ? `Say in a ${tone} voice` : 'Say'\n  const style = [base, profile].filter(Boolean).join('; ')\n\n  const output_dir = `anima/${season.folder || topic.season_id}/${topic.folder || topic.topic_id}`\n  const file_name = `${String(scene.scena ?? 0).padStart(2, '0')}-${scene.shot_num ?? 1}.wav`\n\n  return [{ json: { scene_id: scene.scene_id, text, voice, style, tts_url: TTS_URL, local_comfy_url: LOCAL_COMFY_URL, output_dir, file_name } }]\n} catch (error) {\n  return [{ json: { error: error.message } }]\n}\n"
+      },
+      "name": "Vars",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "id": "26353b56-2701-4d4a-99d3-e4176c31312d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "33bdadf4-e4a7-46ac-99d5-efaace7b9398",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Vars ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        300
+      ],
+      "id": "d687636c-aa94-4bb1-ba69-e2e287249cd1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.tts_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text, voice: $json.voice, style: $json.style }) }}",
+        "options": {
+          "timeout": 180000,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "TTS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ],
+      "id": "a4f87162-9c67-4856-8b18-9604c343219f",
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// audio_result.js — n8n Code-узел «Wav info» конвейера озвучки (n8n на .99). Mode: Run Once for All Items.\n//\n// Вход: binary.data — wav от tts-proxy (узел «TTS», Response Format: File).\n// Считает длительность по заголовку WAV и даёт файлу имя <NN>-<шот>.wav (Vars.file_name),\n// чтобы локальный ComfyUI сохранил его так (при повторе — «<NN>-<шот> (1).wav», старые остаются).\n// Выход: json.audio_duration (сек), binary.data — тот же wav с нужным именем.\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst VARS_NODE = 'Vars'\n\nconst item = $input.first()\nconst bin = item.binary?.data\nif (!bin) throw new Error('tts-proxy не вернул файл (нет binary.data) — проверьте узел TTS: Response Format = File')\nconst buf = await this.helpers.getBinaryDataBuffer(0, 'data')\nif (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') throw new Error(`Ответ tts-proxy — не wav: ${buf.toString('utf8', 0, 200)}`)\n\n// Ищем чанки fmt и data (заголовок не обязательно 44 байта)\nlet rate = 24000\nlet blockAlign = 2\nlet dataSize = buf.length - 44\nfor (let p = 12; p + 8 <= buf.length; ) {\n  const id = buf.toString('ascii', p, p + 4)\n  const size = buf.readUInt32LE(p + 4)\n  if (id === 'fmt ') {\n    rate = buf.readUInt32LE(p + 12)\n    blockAlign = buf.readUInt16LE(p + 20)\n  }\n  if (id === 'data') {\n    dataSize = Math.min(size, buf.length - p - 8)\n    break\n  }\n  p += 8 + size + (size % 2)\n}\nconst audio_duration = Math.round((dataSize / (rate * blockAlign)) * 100) / 100\n\nconst file_name = $(VARS_NODE).first().json.file_name\nreturn [{ json: { audio_duration }, binary: { data: { ...bin, fileName: file_name, mimeType: 'audio/wav', fileExtension: 'wav' } } }]\n"
+      },
+      "name": "Wav info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ],
+      "id": "12b82e51-8526-4ba7-a01f-2eef618e47b9"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Vars').first().json.local_comfy_url }}/upload/image",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "type",
+              "value": "output"
+            },
+            {
+              "parameterType": "formData",
+              "name": "subfolder",
+              "value": "={{ $('Vars').first().json.output_dir }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "overwrite",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Save audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ],
+      "id": "d54f2d71-2cd4-49e3-abcd-ef77240997ba"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scenes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "scene_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook озвучка').first().json.body.scene_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "audio_file",
+              "fieldValue": "={{ $json.subfolder }}/{{ $json.name }}"
+            },
+            {
+              "fieldId": "audio_duration",
+              "fieldValue": "={{ $('Wav info').first().json.audio_duration }}"
+            }
+          ]
+        }
+      },
+      "name": "Update scene",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        300
+      ],
+      "id": "2739a259-47fd-43a5-98bf-47c2042fc524",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scenes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "scene_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook озвучка').first().json.body.scene_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "error"
+            }
+          ]
+        }
+      },
+      "name": "Save error",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        520
+      ],
+      "id": "4c14c620-d360-4936-aa88-9dd2d0cbaec9",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook озвучка": {
+      "main": [
+        [
+          {
+            "node": "Scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scene": {
+      "main": [
+        [
+          {
+            "node": "Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Topic": {
+      "main": [
+        [
+          {
+            "node": "Season",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Season": {
+      "main": [
+        [
+          {
+            "node": "Characters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Characters": {
+      "main": [
+        [
+          {
+            "node": "Vars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vars": {
+      "main": [
+        [
+          {
+            "node": "Vars ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vars ok?": {
+      "main": [
+        [
+          {
+            "node": "TTS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TTS": {
+      "main": [
+        [
+          {
+            "node": "Wav info",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wav info": {
+      "main": [
+        [
+          {
+            "node": "Save audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save audio": {
+      "main": [
+        [
+          {
+            "node": "Update scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "pinData": {}
+}

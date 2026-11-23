@@ -1,0 +1,174 @@
+{
+  "name": "tts-proxy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "3cce057a-d32b-45bf-80fc-616f7aaa3bba",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook TTS",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "id": "80acbe1f-401d-4905-bebd-2964dea30648",
+      "webhookId": "3cce057a-d32b-45bf-80fc-616f7aaa3bba"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// tts_prepare.js — n8n Code-узел «Prepare» процесса tts-proxy (сервер 88.99, доступ к Google).\n// Mode: Run Once for All Items.\n//\n// Прокси ничего не знает о шотах и базе: принимает текст и голос, отдаёт wav (tts_wav.js → Respond).\n// Вход (POST JSON от n8n на .99, n8n/audio_vars.js):\n//   text   — что сказать (обязательно)\n//   voice  — голос Gemini TTS (Kore, Charon, Sadachbia…; обязательно)\n//   style  — как сказать, по-английски: «Say in a calm, wise narrator voice» (необязательно)\n//   model  — модель (по умолчанию MODEL)\n//   pad_ms — тишина в начале и в конце, мс (по умолчанию PAD_MS)\n// Выход: google_body (тело generateContent), model, pad_ms\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst MODEL = 'gemini-2.5-flash-preview-tts'\nconst PAD_MS = 500\n\nconst body = $input.first().json.body ?? {}\nconst text = String(body.text ?? '').trim()\nconst voice = String(body.voice ?? '').trim()\nconst style = String(body.style ?? '').trim()\nif (!text) throw new Error('Нет text')\nif (!voice) throw new Error('Нет voice (голос Gemini TTS, напр. Kore)')\n\n// Gemini TTS понимает инструкцию перед текстом: «Say in a grave voice: …» — инструкцию не читает вслух\nconst prompt = style ? `${style.replace(/[:.\\s]+$/, '')}: ${text}` : text\n\nreturn [\n  {\n    json: {\n      model: String(body.model ?? '').trim() || MODEL,\n      pad_ms: Number.isFinite(Number(body.pad_ms)) ? Math.max(0, Math.min(3000, Number(body.pad_ms))) : PAD_MS,\n      google_body: {\n        contents: [{ parts: [{ text: prompt }] }],\n        generationConfig: {\n          responseModalities: ['AUDIO'],\n          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },\n        },\n      },\n    },\n  },\n]\n"
+      },
+      "name": "Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "id": "dfbe1510-ab52-4bdd-8685-2979c87df646"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $json.model }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.google_body) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "Google TTS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "id": "982bec37-a9b9-440f-93f8-809b539331a4",
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// tts_wav.js — n8n Code-узел «Wav» процесса tts-proxy. Mode: Run Once for All Items.\n//\n// Ответ Gemini TTS — сырой PCM s16le (mimeType «audio/L16;codec=pcm;rate=24000») в base64.\n// Добавляем тишину pad_ms в начале и в конце (как раньше 05sec.wav через ffmpeg) и WAV-заголовок.\n// Выход: binary.audio — wav (его отдаёт Respond to Webhook), json.duration — секунды.\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst PREPARE_NODE = 'Prepare'\n\nconst res = $input.first().json\nconst part = res?.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)\nif (!part) throw new Error(`Google не вернул аудио: ${JSON.stringify(res).slice(0, 300)}`)\n\nconst rate = Number(/rate=(\\d+)/.exec(part.inlineData.mimeType ?? '')?.[1]) || 24000\nconst channels = 1\nconst bytesPerSample = 2\nconst pcm = Buffer.from(part.inlineData.data, 'base64')\nconst padMs = $(PREPARE_NODE).first().json.pad_ms ?? 0\nconst pad = Buffer.alloc(Math.round((rate * padMs) / 1000) * channels * bytesPerSample)\nconst data = Buffer.concat([pad, pcm, pad])\n\nconst header = Buffer.alloc(44)\nheader.write('RIFF', 0)\nheader.writeUInt32LE(36 + data.length, 4)\nheader.write('WAVE', 8)\nheader.write('fmt ', 12)\nheader.writeUInt32LE(16, 16)\nheader.writeUInt16LE(1, 20) // PCM\nheader.writeUInt16LE(channels, 22)\nheader.writeUInt32LE(rate, 24)\nheader.writeUInt32LE(rate * channels * bytesPerSample, 28)\nheader.writeUInt16LE(channels * bytesPerSample, 32)\nheader.writeUInt16LE(bytesPerSample * 8, 34)\nheader.write('data', 36)\nheader.writeUInt32LE(data.length, 40)\n\nconst wav = Buffer.concat([header, data])\nconst duration = Math.round((data.length / (rate * channels * bytesPerSample)) * 100) / 100\n\nreturn [\n  {\n    json: { duration, bytes: wav.length, rate },\n    binary: { audio: { data: wav.toString('base64'), mimeType: 'audio/wav', fileName: 'tts.wav', fileExtension: 'wav' } },\n  },\n]\n"
+      },
+      "name": "Wav",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "id": "e266d9e8-7114-489b-915b-da2c94156284"
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "responseDataSource": "set",
+        "inputFieldName": "audio",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-Audio-Duration",
+                "value": "={{ $json.duration }}"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Respond wav",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        300
+      ],
+      "id": "b8ab3739-857f-44a0-afe3-3503d5f5623b"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.error?.message ?? $json.error ?? 'Google TTS error', details: $json.error?.description ?? null }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "name": "Respond error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        520
+      ],
+      "id": "01c374c9-a5ac-42bc-a9ab-18816ba0e248"
+    }
+  ],
+  "connections": {
+    "Webhook TTS": {
+      "main": [
+        [
+          {
+            "node": "Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare": {
+      "main": [
+        [
+          {
+            "node": "Google TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google TTS": {
+      "main": [
+        [
+          {
+            "node": "Wav",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wav": {
+      "main": [
+        [
+          {
+            "node": "Respond wav",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
