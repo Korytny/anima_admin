@@ -184,8 +184,6 @@
       "parameters": {
         "method": "POST",
         "url": "={{ $json.tts_url }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ text: $json.text, voice: $json.voice, style: $json.style }) }}",

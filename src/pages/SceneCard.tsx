@@ -328,8 +328,12 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
             </div>
           )}
           <PromptBlock scene={draft} cast={cast} />
-          {scene.audio_file && <audio src={mediaUrl(scene.audio_file)} controls className="h-9 w-full" />}
-          <SceneJobs scene={scene} />
+          {scene.audio_file && (
+            <div className="flex items-center gap-2">
+              <audio src={mediaUrl(scene.audio_file)} controls className="h-9 min-w-0 flex-1" />
+              {scene.audio_duration != null && <span className="shrink-0 font-mono text-xs text-fg-3">{scene.audio_duration} с</span>}
+            </div>
+          )}
           {scene.dialogue_text && (
             <blockquote className="rounded-md border-l-2 border-accent bg-bg px-3 py-2 text-[13px] text-fg-2">
               «{scene.dialogue_text}»{scene.dialogue_direction && <span className="ml-1 text-fg-3">— {scene.dialogue_direction}</span>}
@@ -366,6 +370,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
           <>
             {generateBtn}
             <VideoButton scene={scene} disabled={generating} />
+            <AudioButton scene={scene} />
             <Button
               variant="ghost"
               className="px-2"
@@ -413,24 +418,27 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   )
 }
 
-/** Озвучка шота в n8n. */
-function SceneJobs({ scene }: { scene: Scene }) {
+/** Озвучка шота в n8n: текст шота (рассказчик или реплика) голосом говорящего → audio_file, audio_duration. */
+function AudioButton({ scene }: { scene: Scene }) {
   const { runJobs, isRunning } = useData()
-  const audioRunning = isRunning('audio', scene.scene_id)
+  const running = isRunning('audio', scene.scene_id)
+  const noText = !scene.dialogue_text?.trim()
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={audioRunning || !audioConfigured}
-        title={audioConfigured ? 'Озвучить шот в n8n (audio_file)' : 'Не задан VITE_N8N_AUDIO_WEBHOOK'}
-        onClick={() => void runJobs('audio', [scene.scene_id])}
-      >
-        {audioRunning ? <Loader2 className="animate-spin" /> : <AudioLines />}
-        {audioRunning ? 'Озвучка…' : scene.audio_file ? 'Переозвучить' : 'Озвучить'}
-      </Button>
-      {scene.audio_duration != null && <span className="ml-auto font-mono text-xs text-fg-3">аудио {scene.audio_duration} с</span>}
-    </div>
+    <Button
+      variant="outline"
+      disabled={running || noText || !audioConfigured}
+      title={
+        !audioConfigured
+          ? 'Не задан VITE_N8N_AUDIO_WEBHOOK'
+          : noText
+            ? 'У шота нет текста (dialogue_text) — озвучивать нечего'
+            : `${scene.audio_file ? 'Переозвучить' : 'Озвучить'}: ${scene.speaking_character ?? 'говорящий'} — Google TTS, голос из карточки персонажа`
+      }
+      onClick={() => void runJobs('audio', [scene.scene_id])}
+    >
+      {running ? <Loader2 className="animate-spin" /> : <AudioLines />}
+      {running ? 'Озвучка…' : 'Озвучить'}
+    </Button>
   )
 }
 
