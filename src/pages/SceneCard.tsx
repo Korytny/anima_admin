@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AudioLines, Clapperboard, Copy, ListTodo, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import { useSession } from '@/components/AuthGate'
 import type { Character, Scene, Season, Topic } from '@/types'
@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { GENERATING, characterImages, characterTitle, sceneCharacters, seasonCharacters, useData } from '@/store/data'
 import { audioConfigured, pipelineConfigured, videoConfigured } from '@/api/pipeline'
 import { absPath, mediaUrl, outputPrefix, sceneCode, scenePath } from '@/lib/media'
-import { listVariants, variantPrefix, type Variant } from '@/api/media'
+import { listVariants, variantPrefix, videoVariantPrefix, type Variant } from '@/api/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
 import { SCENE_STATUS, isTalkLine, statusOptions, videoBlocker } from '@/lib/status'
@@ -20,20 +20,17 @@ import { Button, ConfirmDialog, Kbd, Tabs, Thumb } from '@/components/ui'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { Lightbox } from '@/components/Lightbox'
 
-function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined): GroupDef<Scene>[] {
+function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined, prompt: ReactNode): GroupDef<Scene>[] {
   const status = scene.status
   return [
     {
-      title: 'Сцена',
-      fields: [
-        { key: 'scena', type: 'number', mono: true },
-        { key: 'shot_num', type: 'number', mono: true },
-        { key: 'order', mono: true },
-        { key: 'status', type: 'select', options: statusOptions(SCENE_STATUS, [status]).map((o) => ({ ...o, label: `${o.label} (${o.value})` })) },
-      ],
+      // Всегда открыта; остальные поля сюда переносятся через «Остальное». Номера сцены/шота не правятся — в «Остальном»
+      title: 'Общее',
+      fields: [{ key: 'status', type: 'select', options: statusOptions(SCENE_STATUS, [status]).map((o) => ({ ...o, label: `${o.label} (${o.value})` })) }],
     },
     {
       title: 'Кадр',
+      defaultOpen: false,
       fields: [
         { key: 'base_image_url', type: 'url', mono: true, extra: (v, set) => <PathHint expected={scenePath(scene, topic, season)} value={v} onChange={set} /> },
         { key: 'manual_prompt', label: 'manual_prompt — сработавший', type: 'textarea', rows: 4, mono: true },
@@ -45,6 +42,7 @@ function groups(scene: Scene, topic: Topic | undefined, season: Season | undefin
     },
     {
       title: 'Диалог',
+      defaultOpen: false,
       fields: [
         { key: 'speaking_character' },
         { key: 'dialogue_text', type: 'textarea', rows: 3 },
@@ -75,6 +73,7 @@ function groups(scene: Scene, topic: Topic | undefined, season: Season | undefin
     {
       title: 'Окружение',
       defaultOpen: false,
+      before: prompt,
       fields: [
         { key: 'environment', type: 'textarea', rows: 2 },
         { key: 'location_desc' },
@@ -130,14 +129,14 @@ export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene
       panelKey={scene?.scene_id}
       header={
         scene && (
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-5 items-center rounded bg-raised px-1.5 font-mono text-xs">
-                {scene.scena ?? '—'}.{scene.shot_num ?? '—'}
-              </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex h-5 shrink-0 items-center rounded bg-raised px-1.5 font-mono text-xs">
+              {scene.scena ?? '—'}.{scene.shot_num ?? '—'}
+            </span>
+            <h2 className="min-w-0 truncate text-base font-semibold">{scene.speaking_character || `Сцена ${scene.scena ?? ''}`}</h2>
+            <span className="shrink-0">
               <SceneStageBadge scene={scene} topic={topics.find((t) => t.topic_id === scene.topic)} />
-            </div>
-            <h2 className="mt-1 truncate text-base font-semibold">{scene.speaking_character || `Сцена ${scene.scena ?? ''}`}</h2>
+            </span>
           </div>
         )
       }
@@ -163,7 +162,8 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const [applyAll, setApplyAll] = useState(false)
   const topic = topics.find((t) => t.topic_id === scene.topic)
   const season = seasons.find((x) => x.id === topic?.season_id)
-  const codeGroups = useMemo(() => (draft ? groups(draft, topic, season) : []), [draft, topic, season])
+  const promptBlock = draft ? <PromptBlock scene={draft} cast={cast} /> : null
+  const codeGroups = useMemo(() => (draft ? groups(draft, topic, season, promptBlock) : []), [draft, topic, season, cast]) // eslint-disable-line react-hooks/exhaustive-deps
   const layout = useCardLayout('card:scene', codeGroups, draft)
   // Варианты кадра на диске (каждая перегенерация — новый файл рядом); основной — тот, что в base_image_url
   const [variants, setVariants] = useState<Variant[]>([])
@@ -177,6 +177,17 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
       alive = false
     }
   }, [prefix, scene.base_image_url, scene.updated_at])
+  // Варианты видео (каждая перегенерация — новый mp4 рядом); основной — тот, что в video_file
+  const [videos, setVideos] = useState<Variant[]>([])
+  const [video, setVideo] = useState<string | null>(null) // выбранный для просмотра; null — основной
+  const videoPrefix = scene.video_file ? videoVariantPrefix(scene.video_file) : outputPrefix(scene, topic, season)
+  useEffect(() => {
+    let alive = true
+    void listVariants(videoPrefix, 'video').then((v) => alive && setVideos(v))
+    return () => {
+      alive = false
+    }
+  }, [videoPrefix, scene.video_file, scene.updated_at])
   if (!draft) return null
 
   // Сначала кадр сцены, потом референсы персонажей. Нет кадра — большое окно пустое, пока не выбран референс
@@ -231,7 +242,46 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
             />
           )}
           {media === 'video' && scene.video_file ? (
-            <VideoPlayer src={scene.video_file} poster={frames[0]} subtitles={scene.video_sub || undefined} />
+            <>
+              <VideoPlayer key={video ?? scene.video_file} src={video ?? scene.video_file} poster={frames[0]} subtitles={scene.video_sub || undefined} />
+              {videos.length > 1 && (
+                <div>
+                  <div className="mb-1 flex items-center gap-2 text-[11px] text-fg-3">
+                    Варианты видео · {videos.length}
+                    {video && video !== scene.video_file && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="ml-auto"
+                        onClick={async () => {
+                          const s = await updateScene(scene.scene_id, { video_file: video })
+                          if (s) setVideo(null)
+                        }}
+                      >
+                        Сделать основным
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {videos.map((v) => {
+                      const main = v.path === scene.video_file
+                      const shown = (video ?? scene.video_file) === v.path
+                      return (
+                        <button
+                          key={v.path}
+                          onClick={() => setVideo(main ? null : v.path)}
+                          title={`${v.path.split('/').pop()} · ${fmtDateTime(new Date(v.mtime).toISOString())}${main ? ' — основной' : ''}`}
+                          className={cn('relative shrink-0 overflow-hidden rounded ring-2', shown ? 'ring-accent' : 'ring-transparent')}
+                        >
+                          <video src={mediaUrl(v.path)} muted preload="metadata" className="pointer-events-none h-16 w-12 bg-raised object-cover" />
+                          {main && <span className="absolute right-0 bottom-0 left-0 bg-success/80 text-center text-[9px] leading-tight text-bg">основной</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <div className="relative">
@@ -327,7 +377,6 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
               ))}
             </div>
           )}
-          <PromptBlock scene={draft} cast={cast} />
           {scene.audio_file && (
             <div className="flex items-center gap-2">
               <audio src={mediaUrl(scene.audio_file)} controls className="h-9 min-w-0 flex-1" />

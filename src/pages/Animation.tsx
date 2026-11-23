@@ -120,12 +120,19 @@ function Clip({ scene, cast, running, active, onClick }: { scene: Scene; cast: {
           <video
             src={video}
             poster={poster}
-            muted
             loop
             playsInline
             preload="metadata"
             onError={() => setBroken(video)}
-            onMouseEnter={(e) => void e.currentTarget.play().catch(() => {})}
+            // Со звуком; пока на странице не было клика, браузер запрещает звук без действия пользователя — тогда без звука
+            onMouseEnter={(e) => {
+              const v = e.currentTarget
+              v.muted = false
+              void v.play().catch(() => {
+                v.muted = true
+                void v.play().catch(() => {})
+              })
+            }}
             onMouseLeave={(e) => {
               e.currentTarget.pause()
               e.currentTarget.currentTime = 0

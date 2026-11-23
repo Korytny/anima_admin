@@ -25,6 +25,8 @@ export interface GroupDef<T> {
   defaultOpen?: boolean
   /** Без заголовка и сворачивания — просто поля. */
   flat?: boolean
+  /** Блок над полями группы (не поле: подсказка, промпт с копированием…). */
+  before?: ReactNode
 }
 
 export type FieldAction = (key: string, group: string) => ReactNode
@@ -89,6 +91,7 @@ function Group<T extends object>({
       </button>
       {open && (
         <div className="grid grid-cols-[minmax(96px,34%)_1fr] gap-x-3 gap-y-2 px-4 pb-4">
+          {group.before && <div className="col-span-2">{group.before}</div>}
           {group.fields.map((f) => (
             <FieldRow key={f.key} field={f} value={draft[f.key]} onChange={(v) => onChange(f.key, v)} dirty={dirtyKeys?.has(f.key)} action={fieldAction?.(f.key, group.title)} />
           ))}

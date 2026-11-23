@@ -43,7 +43,8 @@ function mediaDir(dir: string | undefined): Plugin {
         res.end(`not found: ${file}`)
       }
       // Варианты кадра шота: ComfyUI кладёт каждую перегенерацию рядом — 01-1_00001_.png, 01-1_00002_.png…
-      // GET /media-api/variants?prefix=anima/karna/<серия>/01-1 → [{ path, mtime }] от новых к старым. Только чтение.
+      // GET /media-api/variants?prefix=anima/karna/<серия>/01-1[&kind=video] → [{ path, mtime }] от новых к старым. Только чтение.
+      // Видео шота: n8n кладёт 01-1_00001-audio.mp4, 01-1_00002-audio.mp4…
       server.middlewares.use('/media-api/variants', (req, res) => {
         const send = (status: number, body: unknown) => {
           res.statusCode = status
@@ -56,7 +57,8 @@ function mediaDir(dir: string | undefined): Plugin {
         const folder = resolve(root, prefix.slice(0, slash))
         if (!folder.startsWith(root + sep)) return send(400, { error: 'Вне MEDIA_DIR' })
         const base = prefix.slice(slash + 1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const re = new RegExp(`^${base}(_\\d+_)?\\.(png|jpe?g|webp)$`, 'i')
+        const video = new URL(req.url ?? '/', 'http://x').searchParams.get('kind') === 'video'
+        const re = video ? new RegExp(`^${base}_\\d+_?(-audio)?\\.(mp4|webm|mov)$`, 'i') : new RegExp(`^${base}(_\\d+_)?\\.(png|jpe?g|webp)$`, 'i')
         let names: string[] = []
         try {
           names = readdirSync(folder).filter((n) => re.test(n))
