@@ -273,7 +273,7 @@
             {
               "keyName": "scene_id",
               "condition": "eq",
-              "keyValue": "={{ $('Webhook озвучка').first().json.body.scene_id }}"
+              "keyValue": "={{ $('Scene').first().json.scene_id }}"
             }
           ]
         },
@@ -314,7 +314,7 @@
             {
               "keyName": "scene_id",
               "condition": "eq",
-              "keyValue": "={{ $('Webhook озвучка').first().json.body.scene_id }}"
+              "keyValue": "={{ $('Scene').first().json.scene_id }}"
             }
           ]
         },

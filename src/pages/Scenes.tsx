@@ -4,7 +4,7 @@ import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { AudioLines, Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
 import type { Scene } from '@/types'
 import { GENERATING, sceneCast, sortScenes, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
-import { SCENE_STAGES, SCENE_STAGE_ORDER, TOPIC_STATUS, needsAudio, sceneStage, statusMeta } from '@/lib/status'
+import { SCENE_STAGES, SCENE_STAGE_ORDER, TOPIC_STATUS, needsAudio, sceneStage, statusMeta, videoBlocker } from '@/lib/status'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
@@ -58,7 +58,6 @@ function TopicScenes({ topicId }: { topicId: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { topics, scenes: allScenes, characters: allCharacters, loading, createScene, deleteScenes, updateScenes, generateSceneImages, runJobs, isRunning } = useData()
-  const [videoNoLength, setVideoNoLength] = useState<string[] | null>(null)
   const all = useScenesByTopic().get(topicId) ?? []
   const topic = topics.find((t) => t.topic_id === topicId)
   const pool = useMemo(() => seasonCharacters(topic?.season_id, allCharacters), [topic?.season_id, allCharacters])
@@ -96,6 +95,8 @@ function TopicScenes({ topicId }: { topicId: string }) {
   const selectedIds = Object.keys(selection)
   // Массовая озвучка — рассказчик и прочий текст; реплики персонажей (#talk) озвучивают по выбору, кнопкой на шоте
   const audioIds = all.filter((s) => selection[s.scene_id] && needsAudio(s)).map((s) => s.scene_id)
+  // Видео — только шотам с кадром и (если есть текст рассказчика) с озвучкой: по ней длина видео
+  const videoIds = all.filter((s) => selection[s.scene_id] && !videoBlocker(s)).map((s) => s.scene_id)
 
   const add = async () => {
     const s = await createScene(topicId)
@@ -380,16 +381,20 @@ function TopicScenes({ topicId }: { topicId: string }) {
               {selectedIds.length > 0 && (
                 <Button
                   variant="outline"
-                  disabled={!videoConfigured}
-                  title={videoConfigured ? 'Собрать видео выбранных шотов в n8n' : 'Не задан VITE_N8N_VIDEO_WEBHOOK'}
+                  disabled={!videoConfigured || !videoIds.length}
+                  title={
+                    !videoConfigured
+                      ? 'Не задан VITE_N8N_VIDEO_WEBHOOK'
+                      : videoIds.length < selectedIds.length
+                        ? `Видео для ${videoIds.length} из ${selectedIds.length}: у остальных нет кадра или не озвучен текст рассказчика — по озвучке считается длина видео`
+                        : 'Собрать видео выбранных шотов в n8n'
+                  }
                   onClick={() => {
-                    const ids = new Set(selectedIds)
-                    if (allScenes.some((s) => ids.has(s.scene_id) && !s.audio_file && !s.time)) return setVideoNoLength(selectedIds)
-                    void runJobs('video', selectedIds)
+                    void runJobs('video', videoIds)
                     setSelection({})
                   }}
                 >
-                  <Film /> Видео ({selectedIds.length})
+                  <Film /> Видео ({videoIds.length < selectedIds.length ? `${videoIds.length} из ${selectedIds.length}` : videoIds.length})
                 </Button>
               )}
               <Button variant="danger" disabled={!selectedIds.length} onClick={() => setConfirm(selectedIds)}>
@@ -414,18 +419,6 @@ function TopicScenes({ topicId }: { topicId: string }) {
       </div>
 
       <SceneCard scene={active} siblings={all} onClose={() => open(null)} onDelete={(id) => setConfirm([id])} />
-
-      <ConfirmDialog
-        open={!!videoNoLength}
-        onOpenChange={(o) => !o && setVideoNoLength(null)}
-        title="Не у всех шотов задана длительность"
-        description={`Без озвучки и без времени шота: ${allScenes.filter((s) => videoNoLength?.includes(s.scene_id) && !s.audio_file && !s.time).length} из ${videoNoLength?.length ?? 0}. Видео строится по озвучке, а без неё — по полю «Сек».`}
-        confirmLabel="Всё равно запустить"
-        onConfirm={() => {
-          void runJobs('video', videoNoLength ?? [])
-          setSelection({})
-        }}
-      />
 
       <ConfirmDialog
         open={!!confirm}

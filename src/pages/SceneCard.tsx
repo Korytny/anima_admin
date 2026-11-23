@@ -9,7 +9,7 @@ import { absPath, mediaUrl, outputPrefix, sceneCode, scenePath } from '@/lib/med
 import { listVariants, variantPrefix, type Variant } from '@/api/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
-import { SCENE_STATUS, isTalkLine, statusOptions } from '@/lib/status'
+import { SCENE_STATUS, isTalkLine, statusOptions, videoBlocker } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { useCardLayout } from '@/lib/useCardLayout'
 import { cn, copyText, fmtDateTime } from '@/lib/utils'
@@ -448,16 +448,16 @@ function AudioButton({ scene }: { scene: Scene }) {
 function VideoButton({ scene, disabled }: { scene: Scene; disabled?: boolean }) {
   const { runJobs, isRunning } = useData()
   const running = isRunning('video', scene.scene_id)
-  const noFrame = !scene.base_image_url
+  const blocker = videoBlocker(scene)
   return (
     <Button
       variant="outline"
-      disabled={disabled || running || noFrame || !videoConfigured}
+      disabled={disabled || running || !!blocker || !videoConfigured}
       title={
         !videoConfigured
           ? 'Не задан VITE_N8N_VIDEO_WEBHOOK'
-          : noFrame
-            ? 'Сначала нужен кадр — видео делается из него'
+          : blocker
+            ? blocker
             : `${scene.video_file ? 'Перегенерировать' : 'Сделать'} видео: кадр → видео со звуком (n8n, сервер Таиланд, ~4–5 мин)`
       }
       onClick={() => void runJobs('video', [scene.scene_id])}

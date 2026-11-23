@@ -67,6 +67,13 @@ export const isTalkLine = (s: VoiceScene) => s.shot_type === 'talk' && !!s.dialo
 /** Озвучку обязательно делать (массовые «Озвучить»): есть текст и это не реплика #talk (её озвучивают по кнопке на шоте). */
 export const needsAudio = (s: VoiceScene) => !!s.dialogue_text?.trim() && !isTalkLine(s)
 
+/** Почему видео шота делать нельзя (null — можно). Текст рассказчика без озвучки: длина видео = длина озвучки, её ещё нет. */
+export function videoBlocker(s: VoiceScene & { base_image_url: string | null; audio_file: string | null }): string | null {
+  if (!s.base_image_url) return 'Сначала нужен кадр — видео делается из него'
+  if (needsAudio(s) && !s.audio_file) return 'Сначала озвучьте текст шота: по длине озвучки считается длина видео'
+  return null
+}
+
 type StageScene = { visual_prompt: string | null; manual_prompt: string | null; base_image_url: string | null; dialogue_text: string | null; audio_file: string | null; video_file: string | null }
 
 /** Этап — по первому несделанному шагу. montage — если у серии есть url_final. */
