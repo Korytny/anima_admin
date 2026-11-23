@@ -20,7 +20,7 @@ import { Button, ConfirmDialog, Kbd, Tabs, Thumb } from '@/components/ui'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { Lightbox } from '@/components/Lightbox'
 
-function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined, prompt: ReactNode): GroupDef<Scene>[] {
+function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined, blocks: { prompt: ReactNode; audio: ReactNode }): GroupDef<Scene>[] {
   const status = scene.status
   return [
     {
@@ -73,7 +73,7 @@ function groups(scene: Scene, topic: Topic | undefined, season: Season | undefin
     {
       title: 'Окружение',
       defaultOpen: false,
-      before: prompt,
+      before: blocks.prompt,
       fields: [
         { key: 'environment', type: 'textarea', rows: 2 },
         { key: 'location_desc' },
@@ -86,6 +86,7 @@ function groups(scene: Scene, topic: Topic | undefined, season: Season | undefin
     {
       title: 'Аудио',
       defaultOpen: false,
+      before: blocks.audio,
       fields: [
         { key: 'audio_file', type: 'url', mono: true },
         { key: 'audio_duration', label: 'audio_duration, сек', type: 'number', mono: true },
@@ -162,8 +163,26 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const [applyAll, setApplyAll] = useState(false)
   const topic = topics.find((t) => t.topic_id === scene.topic)
   const season = seasons.find((x) => x.id === topic?.season_id)
-  const promptBlock = draft ? <PromptBlock scene={draft} cast={cast} /> : null
-  const codeGroups = useMemo(() => (draft ? groups(draft, topic, season, promptBlock) : []), [draft, topic, season, cast]) // eslint-disable-line react-hooks/exhaustive-deps
+  const blocks = {
+    prompt: draft ? <PromptBlock scene={draft} cast={cast} /> : null,
+    audio:
+      scene.dialogue_text || scene.audio_file ? (
+        <div className="space-y-2">
+          {scene.dialogue_text && (
+            <blockquote className="rounded-md border-l-2 border-accent bg-bg px-3 py-2 text-[13px] text-fg-2">
+              «{scene.dialogue_text}»{scene.dialogue_direction && <span className="ml-1 text-fg-3">— {scene.dialogue_direction}</span>}
+            </blockquote>
+          )}
+          {scene.audio_file && (
+            <div className="flex items-center gap-2">
+              <audio src={mediaUrl(scene.audio_file)} controls className="h-9 min-w-0 flex-1" />
+              {scene.audio_duration != null && <span className="shrink-0 font-mono text-xs text-fg-3">{scene.audio_duration} с</span>}
+            </div>
+          )}
+        </div>
+      ) : null,
+  }
+  const codeGroups = useMemo(() => (draft ? groups(draft, topic, season, blocks) : []), [draft, topic, season, cast, scene.audio_file, scene.audio_duration, scene.dialogue_text, scene.dialogue_direction]) // eslint-disable-line react-hooks/exhaustive-deps
   const layout = useCardLayout('card:scene', codeGroups, draft)
   // Варианты кадра на диске (каждая перегенерация — новый файл рядом); основной — тот, что в base_image_url
   const [variants, setVariants] = useState<Variant[]>([])
@@ -298,95 +317,86 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
                   </div>
                 )}
               </div>
-              {images.length > 1 || (!frames.length && images.length) ? (
-                <div className="flex items-center gap-1.5 overflow-x-auto">
-                  {images.map((p, i) => (
-                    <Fragment key={p + i}>
-                      {i === frames.length && <span className="shrink-0 pl-1 text-[11px] text-fg-3">Референсы:</span>}
+              {(variants.length > 1 || scene.event_img || cast.length > 0 || missing.length > 0) && (
+                <div>
+                  {variants.length > 1 && (
+                    <div className="mb-1 flex h-6 items-center gap-2 text-[11px] text-fg-3">
+                      Варианты кадра · {variants.length}
+                      {variant && !isMain(variant) && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          className="ml-auto"
+                          onClick={async () => {
+                            const s = await updateScene(scene.scene_id, { base_image_url: variant })
+                            if (s) setVariant(null)
+                          }}
+                        >
+                          Сделать основным
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {/* Одна лента: варианты кадра (и второй кадр события) | герои шота */}
+                  <div className="flex items-stretch gap-1.5 overflow-x-auto pb-1">
+                    {variants.length > 1 &&
+                      variants.map((v) => {
+                        const main = isMain(v.path)
+                        const shown = img == null && (variant ? variant === v.path : main)
+                        return (
+                          <button
+                            key={v.path}
+                            onClick={() => {
+                              setImg(null)
+                              setVariant(main ? null : v.path)
+                            }}
+                            title={`${v.path.split('/').pop()}${main ? ' — основной' : ''}`}
+                            className={cn('relative shrink-0 rounded ring-2', shown ? 'ring-accent' : 'ring-transparent')}
+                          >
+                            <Thumb src={v.path} className="h-16 w-9" />
+                            {main && <span className="absolute right-0 bottom-0 left-0 rounded-b bg-success/80 text-center text-[9px] leading-tight text-bg">основной</span>}
+                          </button>
+                        )
+                      })}
+                    {scene.event_img && (
                       <button
                         onClick={() => {
-                          setImg(i)
+                          setImg(frames.indexOf(scene.event_img!))
                           setVariant(null)
                         }}
-                        title={i < frames.length ? 'Кадр сцены' : 'Референс персонажа'}
-                        className={`shrink-0 rounded ring-2 ${(img ?? (frames.length ? 0 : -1)) === i ? 'ring-accent' : 'ring-transparent'}`}
+                        title="Кадр события (event_img)"
+                        className={cn('shrink-0 rounded ring-2', img === frames.indexOf(scene.event_img) ? 'ring-accent' : 'ring-transparent')}
                       >
-                        <Thumb src={p} className="h-10 w-16" />
+                        <Thumb src={scene.event_img} className="h-16 w-9" />
                       </button>
-                    </Fragment>
-                  ))}
-                </div>
-              ) : null}
-              {variants.length > 1 && (
-                <div>
-                  <div className="mb-1 flex items-center gap-2 text-[11px] text-fg-3">
-                    Варианты кадра · {variants.length}
-                    {variant && !isMain(variant) && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        className="ml-auto"
-                        onClick={async () => {
-                          const s = await updateScene(scene.scene_id, { base_image_url: variant })
-                          if (s) setVariant(null)
-                        }}
-                      >
-                        Сделать основным
-                      </Button>
                     )}
-                  </div>
-                  <div className="flex gap-1.5 overflow-x-auto pb-1">
-                    {variants.map((v) => {
-                      const main = isMain(v.path)
-                      const shown = variant ? variant === v.path : main
-                      return (
-                        <button
-                          key={v.path}
-                          onClick={() => setVariant(main ? null : v.path)}
-                          title={`${v.path.split('/').pop()}${main ? ' — основной' : ''}`}
-                          className={cn('relative shrink-0 rounded ring-2', shown ? 'ring-accent' : 'ring-transparent')}
-                        >
-                          <Thumb src={v.path} className="h-16 w-9" />
-                          {main && <span className="absolute right-0 bottom-0 left-0 rounded-b bg-success/80 text-center text-[9px] leading-tight text-bg">основной</span>}
-                        </button>
-                      )
-                    })}
+                    {(variants.length > 1 || scene.event_img) && (cast.length > 0 || missing.length > 0) && <span className="mx-1 w-px shrink-0 bg-border" />}
+                    {cast.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => navigate(`/characters/${c.season}?character=${c.id}`)}
+                        title={`${characterTitle(c)} — открыть карточку персонажа${characterImages(c).length ? '' : ' (нет файла)'}`}
+                        className="relative shrink-0 overflow-hidden rounded ring-1 ring-border hover:ring-accent"
+                      >
+                        <Thumb src={characterImages(c)[0]} className="h-16 w-12" />
+                        <span className={cn('absolute right-0 bottom-0 left-0 truncate bg-bg/80 px-0.5 text-center text-[9px] leading-tight', characterImages(c).length ? 'text-fg-2' : 'text-danger')}>
+                          {characterTitle(c)}
+                        </span>
+                      </button>
+                    ))}
+                    {missing.map((n) => (
+                      <span
+                        key={n}
+                        title="Нет записи в characters для этого сезона"
+                        className="flex h-16 w-12 shrink-0 items-center justify-center rounded border border-dashed border-danger/40 px-0.5 text-center text-[9px] text-danger"
+                      >
+                        {n}?
+                      </span>
+                    ))}
                   </div>
                 </div>
               )}
             </>
-          )}
-          {(cast.length > 0 || missing.length > 0) && (
-            <div className="flex flex-wrap gap-1.5">
-              {cast.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => navigate(`/characters/${c.season}?character=${c.id}`)}
-                  title={characterImages(c)[0] ?? 'Нет файла персонажа'}
-                  className="flex items-center gap-1.5 rounded-md border border-border bg-raised py-1 pr-2 pl-1 text-xs hover:bg-hover"
-                >
-                  <Thumb src={characterImages(c)[0]} className="size-6" />
-                  {characterTitle(c)}
-                  {!characterImages(c).length && <span className="text-danger">нет файла</span>}
-                </button>
-              ))}
-              {missing.map((n) => (
-                <span key={n} title="Нет записи в characters для этого ролика" className="flex items-center rounded-md border border-dashed border-danger/40 px-2 py-1 text-xs text-danger">
-                  {n}?
-                </span>
-              ))}
-            </div>
-          )}
-          {scene.audio_file && (
-            <div className="flex items-center gap-2">
-              <audio src={mediaUrl(scene.audio_file)} controls className="h-9 min-w-0 flex-1" />
-              {scene.audio_duration != null && <span className="shrink-0 font-mono text-xs text-fg-3">{scene.audio_duration} с</span>}
-            </div>
-          )}
-          {scene.dialogue_text && (
-            <blockquote className="rounded-md border-l-2 border-accent bg-bg px-3 py-2 text-[13px] text-fg-2">
-              «{scene.dialogue_text}»{scene.dialogue_direction && <span className="ml-1 text-fg-3">— {scene.dialogue_direction}</span>}
-            </blockquote>
           )}
         </div>
         <FieldGroups groups={layout.groups} draft={draft} onChange={set} dirtyKeys={dirtyKeys} fieldAction={layout.fieldAction} />
