@@ -189,6 +189,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const applyKeys = [...dirtyKeys].filter((k) => !NO_BULK.has(k))
   const generating = scene.status === GENERATING
   const queued = isQueued(scene.scene_id)
+  const openTasks = tasks.filter((t) => t.scene_id === scene.scene_id && t.status !== 'done').length
 
   // Несохранённые правки промпта сначала пишем в БД — n8n берёт данные оттуда
   const generate = async () => {
@@ -203,10 +204,14 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
       variant={dirty ? 'outline' : 'primary'}
       onClick={generate}
       disabled={generating || queued || saving || !pipelineConfigured}
-      title={pipelineConfigured ? 'Поставить шот в очередь кадров (если очередь пуста — сразу в n8n)' : 'Не задан VITE_N8N_IMAGE_WEBHOOK'}
+      title={
+        !pipelineConfigured
+          ? 'Не задан VITE_N8N_IMAGE_WEBHOOK'
+          : `${dirty ? 'Сохранить правки и сгенерировать' : scene.base_image_url ? 'Перегенерировать' : 'Сгенерировать'} кадр (очередь кадров; пуста — сразу в n8n)`
+      }
     >
       {generating || queued ? <Loader2 className="animate-spin" /> : <Sparkles />}
-      {generating ? 'Генерируется…' : queued ? 'В очереди…' : dirty ? 'Сохранить и сгенерировать' : scene.base_image_url ? 'Перегенерировать' : 'Сгенерировать фото'}
+      {generating ? 'Фото…' : queued ? 'В очереди' : 'Фото'}
     </Button>
   )
 
@@ -350,7 +355,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
             {generateBtn}
             {applyKeys.length > 0 && siblings.length > 1 && (
               <Button onClick={() => setApplyAll(true)} title="Записать изменённые поля во все сцены ролика">
-                Применить ко всем
+                Ко всем
               </Button>
             )}
             <Button variant="ghost" onClick={reset}>
@@ -360,19 +365,20 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
         ) : (
           <>
             {generateBtn}
+            <VideoButton scene={scene} disabled={generating} />
             <Button
-              variant="outline"
-              title={`Создать задачу по этому шоту${team.length > 1 ? ' и назначить другому участнику' : ''}`}
+              variant="ghost"
+              className="px-2"
+              aria-label="Задача по шоту"
+              title={`Создать задачу по этому шоту${team.length > 1 ? ' и назначить другому участнику' : ''}${openTasks ? ` · открытых: ${openTasks}` : ''}`}
               onClick={async () => {
                 const other = team.find((m) => m.user_id !== me)?.user_id ?? me ?? null
                 const t = await createTask({ title: `Шот ${sceneCode(scene)}: выбрать лучший кадр`, scene_id: scene.scene_id, topic_id: scene.topic, assignee: other })
                 if (t) navigate(`/tasks?who=all&task=${t.id}`)
               }}
             >
-              <ListTodo /> Задача
-              {tasks.filter((t) => t.scene_id === scene.scene_id && t.status !== 'done').length > 0 && (
-                <span className="rounded-full bg-accent/20 px-1.5 text-[10px] text-accent-hover">{tasks.filter((t) => t.scene_id === scene.scene_id && t.status !== 'done').length}</span>
-              )}
+              <ListTodo />
+              {openTasks > 0 && <span className="rounded-full bg-accent/20 px-1.5 text-[10px] text-accent-hover">{openTasks}</span>}
             </Button>
             <Button variant="ghost" size="icon" title="Скопировать ссылку" aria-label="Скопировать ссылку" onClick={() => copyText(location.href)}>
               <Copy />
@@ -407,13 +413,10 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   )
 }
 
-/** Озвучка и видео шота в n8n. Длительность видео — по аудио, без озвучки — по scenes.time; нет ни того ни другого — подтверждение. */
+/** Озвучка шота в n8n. */
 function SceneJobs({ scene }: { scene: Scene }) {
   const { runJobs, isRunning } = useData()
-  const [noLength, setNoLength] = useState(false)
   const audioRunning = isRunning('audio', scene.scene_id)
-  const videoRunning = isRunning('video', scene.scene_id)
-  const runVideo = () => void runJobs('video', [scene.scene_id])
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button
@@ -426,32 +429,32 @@ function SceneJobs({ scene }: { scene: Scene }) {
         {audioRunning ? <Loader2 className="animate-spin" /> : <AudioLines />}
         {audioRunning ? 'Озвучка…' : scene.audio_file ? 'Переозвучить' : 'Озвучить'}
       </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={videoRunning || !videoConfigured}
-        title={videoConfigured ? 'Собрать видео шота в n8n (video_file)' : 'Не задан VITE_N8N_VIDEO_WEBHOOK'}
-        onClick={() => (scene.audio_file || scene.time ? runVideo() : setNoLength(true))}
-      >
-        {videoRunning ? <Loader2 className="animate-spin" /> : <Clapperboard />}
-        {videoRunning ? 'Видео…' : scene.video_file ? 'Пересобрать видео' : 'Видео'}
-      </Button>
-      {!scene.audio_file &&
-        (scene.time ? (
-          <span className="text-xs text-fg-3">без озвучки — видео по времени шота: {scene.time} с</span>
-        ) : (
-          <span className="text-xs text-gold">нет ни озвучки, ни времени шота</span>
-        ))}
       {scene.audio_duration != null && <span className="ml-auto font-mono text-xs text-fg-3">аудио {scene.audio_duration} с</span>}
-      <ConfirmDialog
-        open={noLength}
-        onOpenChange={setNoLength}
-        title="Не задана длительность видео"
-        description="Видео строится по озвучке, а без неё — по времени шота (поле «Сек»). У этого шота нет ни того, ни другого."
-        confirmLabel="Всё равно запустить"
-        onConfirm={runVideo}
-      />
     </div>
+  )
+}
+
+/** Видео шота в n8n: кадр раскадровки → видео со звуком (у #talk — реплика голосом). Длину считает n8n по реплике. */
+function VideoButton({ scene, disabled }: { scene: Scene; disabled?: boolean }) {
+  const { runJobs, isRunning } = useData()
+  const running = isRunning('video', scene.scene_id)
+  const noFrame = !scene.base_image_url
+  return (
+    <Button
+      variant="outline"
+      disabled={disabled || running || noFrame || !videoConfigured}
+      title={
+        !videoConfigured
+          ? 'Не задан VITE_N8N_VIDEO_WEBHOOK'
+          : noFrame
+            ? 'Сначала нужен кадр — видео делается из него'
+            : `${scene.video_file ? 'Перегенерировать' : 'Сделать'} видео: кадр → видео со звуком (n8n, сервер Таиланд, ~4–5 мин)`
+      }
+      onClick={() => void runJobs('video', [scene.scene_id])}
+    >
+      {running ? <Loader2 className="animate-spin" /> : <Clapperboard />}
+      {running ? 'Видео…' : 'Видео'}
+    </Button>
   )
 }
 

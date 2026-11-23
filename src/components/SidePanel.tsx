@@ -63,5 +63,5 @@ export function PanelScroll({ children }: { children: ReactNode }) {
 }
 
 export function PanelFooter({ children }: { children: ReactNode }) {
-  return <div className="flex shrink-0 items-center gap-2 border-t border-border bg-surface px-4 py-3">{children}</div>
+  return <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-surface px-4 py-3">{children}</div>
 }
