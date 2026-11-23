@@ -9,7 +9,7 @@ import { absPath, mediaUrl, outputPrefix, sceneCode, scenePath } from '@/lib/med
 import { listVariants, variantPrefix, type Variant } from '@/api/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
-import { SCENE_STATUS, statusOptions } from '@/lib/status'
+import { SCENE_STATUS, statusOptions, voiceInVideo } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { useCardLayout } from '@/lib/useCardLayout'
 import { cn, copyText, fmtDateTime } from '@/lib/utils'
@@ -423,15 +423,18 @@ function AudioButton({ scene }: { scene: Scene }) {
   const { runJobs, isRunning } = useData()
   const running = isRunning('audio', scene.scene_id)
   const noText = !scene.dialogue_text?.trim()
+  const inVideo = voiceInVideo(scene)
   return (
     <Button
       variant="outline"
-      disabled={running || noText || !audioConfigured}
+      disabled={running || noText || inVideo || !audioConfigured}
       title={
         !audioConfigured
           ? 'Не задан VITE_N8N_AUDIO_WEBHOOK'
           : noText
             ? 'У шота нет текста (dialogue_text) — озвучивать нечего'
+            : inVideo
+              ? 'Реплику персонажа говорит видео (голос и губы) — отдельная озвучка не нужна'
             : `${scene.audio_file ? 'Переозвучить' : 'Озвучить'}: ${scene.speaking_character ?? 'говорящий'} — Google TTS, голос из карточки персонажа`
       }
       onClick={() => void runJobs('audio', [scene.scene_id])}

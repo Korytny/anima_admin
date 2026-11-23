@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// tts_prepare.js — n8n Code-узел «Prepare» процесса tts-proxy (сервер 88.99, доступ к Google).\n// Mode: Run Once for All Items.\n//\n// Прокси ничего не знает о шотах и базе: принимает текст и голос, отдаёт wav (tts_wav.js → Respond).\n// Вход (POST JSON от n8n на .99, n8n/audio_vars.js):\n//   text   — что сказать (обязательно)\n//   voice  — голос Gemini TTS (Kore, Charon, Sadachbia…; обязательно)\n//   style  — как сказать, по-английски: «Say in a calm, wise narrator voice» (необязательно)\n//   model  — модель (по умолчанию MODEL)\n//   pad_ms — тишина в начале и в конце, мс (по умолчанию PAD_MS)\n// Выход: google_body (тело generateContent), model, pad_ms\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst MODEL = 'gemini-2.5-flash-preview-tts'\nconst PAD_MS = 500\n\nconst body = $input.first().json.body ?? {}\nconst text = String(body.text ?? '').trim()\nconst voice = String(body.voice ?? '').trim()\nconst style = String(body.style ?? '').trim()\nif (!text) throw new Error('Нет text')\nif (!voice) throw new Error('Нет voice (голос Gemini TTS, напр. Kore)')\n\n// Gemini TTS понимает инструкцию перед текстом: «Say in a grave voice: …» — инструкцию не читает вслух\nconst prompt = style ? `${style.replace(/[:.\\s]+$/, '')}: ${text}` : text\n\nreturn [\n  {\n    json: {\n      model: String(body.model ?? '').trim() || MODEL,\n      pad_ms: Number.isFinite(Number(body.pad_ms)) ? Math.max(0, Math.min(3000, Number(body.pad_ms))) : PAD_MS,\n      google_body: {\n        contents: [{ parts: [{ text: prompt }] }],\n        generationConfig: {\n          responseModalities: ['AUDIO'],\n          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },\n        },\n      },\n    },\n  },\n]\n"
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// tts_prepare.js — n8n Code-узел «Prepare» процесса tts-proxy (сервер 88.99, доступ к Google).\n// Mode: Run Once for All Items.\n//\n// Прокси ничего не знает о шотах и базе: принимает текст и голос, отдаёт wav (tts_wav.js → Respond).\n// Вход (POST JSON от n8n на .99, n8n/audio_vars.js):\n//   text   — что сказать (обязательно)\n//   voice  — голос Gemini TTS (Kore, Charon, Sadachbia…; обязательно)\n//   style  — как сказать, по-английски: «Say in a calm, wise narrator voice» (необязательно)\n//   model  — модель (по умолчанию MODEL)\n//   pad_ms — тишина в начале и в конце, мс (по умолчанию PAD_MS)\n// Выход: google_body (тело generateContent), model, pad_ms\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst MODEL = 'gemini-2.5-pro-preview-tts' // pro живее и держит инструкцию; flash на длинной инструкции читал её вслух и обрывался\nconst PAD_MS = 500\n\nconst body = $input.first().json.body ?? {}\nconst text = String(body.text ?? '').trim()\nconst voice = String(body.voice ?? '').trim()\nconst style = String(body.style ?? '').trim()\nif (!text) throw new Error('Нет text')\nif (!voice) throw new Error('Нет voice (голос Gemini TTS, напр. Kore)')\n\n// Gemini TTS понимает инструкцию перед текстом: «Say in a grave voice: …» — инструкцию не читает вслух\nconst prompt = style ? `${style.replace(/[:.\\s]+$/, '')}: ${text}` : text\n\nreturn [\n  {\n    json: {\n      model: String(body.model ?? '').trim() || MODEL,\n      pad_ms: Number.isFinite(Number(body.pad_ms)) ? Math.max(0, Math.min(3000, Number(body.pad_ms))) : PAD_MS,\n      google_body: {\n        contents: [{ parts: [{ text: prompt }] }],\n        generationConfig: {\n          responseModalities: ['AUDIO'],\n          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },\n        },\n      },\n    },\n  },\n]\n"
       },
       "name": "Prepare",
       "type": "n8n-nodes-base.code",
@@ -68,7 +68,8 @@
         660,
         300
       ],
-      "id": "e266d9e8-7114-489b-915b-da2c94156284"
+      "id": "e266d9e8-7114-489b-915b-da2c94156284",
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -159,6 +160,13 @@
         [
           {
             "node": "Respond wav",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
             "type": "main",
             "index": 0
           }

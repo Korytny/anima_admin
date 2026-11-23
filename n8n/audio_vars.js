@@ -5,7 +5,8 @@
 // (n8n на 88.99 ходит в Google Gemini TTS и отдаёт wav). Файл ляжет рядом с кадрами серии.
 //
 // Голос: scenes.speaking_character_voice (ручная замена на шоте) → characters.voice_name говорящего.
-// Подача (style): dialogue_direction шота / speaker_voice_tone + описание голоса персонажа (voice_profile).
+// Подача (style), коротко: описание голоса персонажа (characters.voice_profile, 2–5 слов) + «Say in a <тон> tone»
+// (тон — dialogue_direction шота / speaker_voice_tone). Длинная режиссура хуже: модель читает её вслух или обрывается.
 // Выход: scene_id, text, voice, style, tts_url, local_comfy_url, output_dir, file_name
 // Узлы: SCENE_NODE, TOPIC_NODE, SEASON_NODE, CHARACTERS_NODE (Supabase).
 // ═══════════════════════════════════════════════════════════════════════════
@@ -16,10 +17,10 @@ const SEASON_NODE = 'Season'
 const CHARACTERS_NODE = 'Characters'
 
 // ── Настройки ──────────────────────────────────────────────────────────────
-const TTS_URL = 'http://88.99.241.163:5678/webhook/3cce057a-d32b-45bf-80fc-616f7aaa3bba' // вебхук tts-proxy (n8n/tts_proxy.workflow.json)
+const TTS_URL = 'http://127.0.0.1:8190/webhook/3cce057a-d32b-45bf-80fc-616f7aaa3bba' // tts-proxy на 88.99 через туннель thai-tunnel (.99 → Таиланд → 88.99): напрямую из России ответ замирает на ~30 КБ
 const LOCAL_COMFY_URL = 'http://127.0.0.1:8188' // свой ComfyUI: /upload/image?type=output кладёт wav в output .99
 const NARRATOR = 'NARRATOR'
-const NARRATOR_STYLE = 'Say in a calm, warm, unhurried storyteller voice'
+const NARRATOR_VOICE = 'Warm, calm documentary storyteller' // если у персонажа Narrator не заполнен voice_profile
 // ───────────────────────────────────────────────────────────────────────────
 
 const norm = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -41,6 +42,8 @@ try {
   if (!text) throw new Error('У шота нет текста (dialogue_text) — озвучивать нечего')
   const speaker = clean(scene.speaking_character)
   if (!speaker) throw new Error('У шота не указан говорящий (speaking_character)')
+  if (scene.shot_type === 'talk' && norm(speaker) !== NARRATOR)
+    throw new Error('#talk-шот: реплику говорит видео (H3, голос и губы) — отдельная озвучка не нужна')
 
   const byName = new Map()
   try {
@@ -54,10 +57,9 @@ try {
     throw new Error(`Нет голоса у «${speaker}»: впишите voice_name персонажу (Персонажи → карточка) или speaking_character_voice шоту`)
 
   const tone = clean(scene.dialogue_direction || scene.speaker_voice_tone)
-  const profile = profileText(character?.voice_profile)
-  const isNarrator = norm(speaker) === NARRATOR
-  const base = isNarrator ? NARRATOR_STYLE + (tone ? `, ${tone}` : '') : tone ? `Say in a ${tone} voice` : 'Say'
-  const style = [base, profile].filter(Boolean).join('; ')
+  const profile = profileText(character?.voice_profile) || (norm(speaker) === NARRATOR ? NARRATOR_VOICE : '')
+  // «Old fierce warrior-sage, deep rough voice. Say in a grave tone»
+  const style = [profile.replace(/[.\s]+$/, ''), tone ? `Say in a ${tone} tone` : 'Say'].filter(Boolean).join('. ')
 
   const output_dir = `anima/${season.folder || topic.season_id}/${topic.folder || topic.topic_id}`
   const file_name = `${String(scene.scena ?? 0).padStart(2, '0')}-${scene.shot_num ?? 1}.wav`

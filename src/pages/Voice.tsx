@@ -6,13 +6,15 @@ import type { Scene } from '@/types'
 import { useData, useScenesByTopic } from '@/store/data'
 import { audioConfigured } from '@/api/pipeline'
 import { mediaUrl } from '@/lib/media'
+import { needsAudio, voiceInVideo } from '@/lib/status'
 import { storageGet } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
 import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
 import { Button, ConfirmDialog, EmptyState } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
-/** Озвучка серии: сцены с репликой (scenes.dialogue_text). Результат n8n пишет в audio_file / audio_duration. */
+/** Озвучка серии: шоты, которым нужна озвучка (needsAudio — в основном рассказчик). Реплики персонажей в #talk-шотах говорит видео — их здесь нет.
+ *  Результат n8n пишет в audio_file / audio_duration. */
 export function VoicePage() {
   const { topicId } = useParams()
   if (!topicId) {
@@ -23,14 +25,14 @@ export function VoicePage() {
   return <Voice key={topicId} topicId={topicId} />
 }
 
-const hasLine = (s: Scene) => !!s.dialogue_text?.trim()
 const noAudioTitle = audioConfigured ? undefined : 'Не задан VITE_N8N_AUDIO_WEBHOOK'
 
 function Voice({ topicId }: { topicId: string }) {
   const [params, setParams] = useSearchParams()
   const { loading, deleteScenes, runJobs, isRunning } = useData()
   const all = useScenesByTopic().get(topicId) ?? []
-  const lines = useMemo(() => all.filter(hasLine), [all])
+  const lines = useMemo(() => all.filter(needsAudio), [all])
+  const inVideo = all.filter(voiceInVideo).length
   const voiced = lines.filter((s) => s.audio_file).length
   const [selection, setSelection] = useState<RowSelectionState>({})
   const [confirm, setConfirm] = useState<string | null>(null)
@@ -165,6 +167,7 @@ function Voice({ topicId }: { topicId: string }) {
             <span>
               Озвучено <b className="text-fg">{voiced}</b>/{lines.length}
             </span>
+            {inVideo > 0 && <span title="Реплики персонажей в #talk-шотах: голос и губы делает видео (MiniMax H3), отдельная озвучка не нужна">+ {inVideo} в видео</span>}
           </div>
         </div>
 

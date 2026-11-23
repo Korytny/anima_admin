@@ -59,6 +59,13 @@ export const SCENE_STAGES: Record<SceneStage, StatusMeta & { hint: string }> = {
 }
 export const SCENE_STAGE_ORDER = Object.keys(SCENE_STAGES) as SceneStage[]
 
+type VoiceScene = { dialogue_text: string | null; shot_type: string | null; speaking_character: string | null }
+const isNarrator = (name: string | null) => (name ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '') === 'NARRATOR'
+/** Реплику персонажа в #talk-шоте говорит само видео (MiniMax H3 — голос и губы); отдельная озвучка не нужна. */
+export const voiceInVideo = (s: VoiceScene) => s.shot_type === 'talk' && !!s.dialogue_text?.trim() && !isNarrator(s.speaking_character)
+/** Шоту нужна озвучка (Google TTS): есть текст и это не реплика, которую говорит видео. В основном — рассказчик. */
+export const needsAudio = (s: VoiceScene) => !!s.dialogue_text?.trim() && !voiceInVideo(s)
+
 type StageScene = { visual_prompt: string | null; manual_prompt: string | null; base_image_url: string | null; dialogue_text: string | null; audio_file: string | null; video_file: string | null }
 
 /** Этап — по первому несделанному шагу. montage — если у серии есть url_final. */

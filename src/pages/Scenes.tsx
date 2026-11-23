@@ -4,7 +4,7 @@ import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { AudioLines, Clapperboard, Eye, Film, Plus, Search, Sparkles, Theater, Trash2, X } from 'lucide-react'
 import type { Scene } from '@/types'
 import { GENERATING, sceneCast, sortScenes, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
-import { SCENE_STAGES, SCENE_STAGE_ORDER, TOPIC_STATUS, sceneStage, statusMeta } from '@/lib/status'
+import { SCENE_STAGES, SCENE_STAGE_ORDER, TOPIC_STATUS, needsAudio, sceneStage, statusMeta } from '@/lib/status'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
@@ -94,6 +94,8 @@ function TopicScenes({ topicId }: { topicId: string }) {
       return p
     })
   const selectedIds = Object.keys(selection)
+  // Озвучка — только шотам, которым она нужна (реплики #talk говорит видео)
+  const audioIds = all.filter((s) => selection[s.scene_id] && needsAudio(s)).map((s) => s.scene_id)
 
   const add = async () => {
     const s = await createScene(topicId)
@@ -358,17 +360,21 @@ function TopicScenes({ topicId }: { topicId: string }) {
                   <Sparkles /> Сгенерировать фото ({selectedIds.length})
                 </Button>
               )}
-              {selectedIds.length > 0 && (
+              {audioIds.length > 0 && (
                 <Button
                   variant="outline"
                   disabled={!audioConfigured}
-                  title={audioConfigured ? 'Озвучить выбранные шоты в n8n' : 'Не задан VITE_N8N_AUDIO_WEBHOOK'}
+                  title={
+                    audioConfigured
+                      ? `Озвучить выбранные шоты с текстом в n8n${audioIds.length < selectedIds.length ? ' (без немых и реплик, которые говорит видео)' : ''}`
+                      : 'Не задан VITE_N8N_AUDIO_WEBHOOK'
+                  }
                   onClick={() => {
-                    void runJobs('audio', selectedIds)
+                    void runJobs('audio', audioIds)
                     setSelection({})
                   }}
                 >
-                  <AudioLines /> Озвучить ({selectedIds.length})
+                  <AudioLines /> Озвучить ({audioIds.length})
                 </Button>
               )}
               {selectedIds.length > 0 && (

@@ -12,7 +12,7 @@
 // Выход: google_body (тело generateContent), model, pad_ms
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MODEL = 'gemini-2.5-flash-preview-tts'
+const MODEL = 'gemini-2.5-pro-preview-tts' // pro живее и держит инструкцию; flash на длинной инструкции читал её вслух и обрывался
 const PAD_MS = 500
 
 const body = $input.first().json.body ?? {}
