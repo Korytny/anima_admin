@@ -1,0 +1,831 @@
+{
+  "name": "video",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "c53c6d47-8540-4db3-b1e7-625b3d80b98e",
+        "options": {}
+      },
+      "name": "Webhook видео",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "id": "e0efdd91-4178-430b-8bde-029a6161268e",
+      "webhookId": "c53c6d47-8540-4db3-b1e7-625b3d80b98e"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "scenes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "scene_id",
+              "keyValue": "={{ $json.body.scene_id }}"
+            }
+          ]
+        }
+      },
+      "name": "Scene",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ],
+      "id": "492c73d3-12b5-4b0c-a572-cd352b19444f",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "topics",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "topic_id",
+              "keyValue": "={{ $json.topic }}"
+            }
+          ]
+        }
+      },
+      "name": "Topic",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        440,
+        300
+      ],
+      "id": "02d6927c-92ef-4c23-b6c8-d5967565cb95",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "seasons",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.season_id }}"
+            }
+          ]
+        }
+      },
+      "name": "Season",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ],
+      "id": "b024bda6-e610-4be4-988a-485a2b0ca6f5",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "characters",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "season",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        }
+      },
+      "name": "Characters",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ],
+      "id": "67800e05-c14c-4b29-b94f-6ec3f294f119",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// video_vars.js — n8n Code-узел «Vars» конвейера видео шота (Mode: Run Once for All Items)\n//\n// Видео шота = кадр раскадровки (первый кадр) + движение + звук; MiniMax H3 i2v, процесс workflows/video-i2v.json.\n// Звук H3 делает сам в том же проходе: шумы, а у #talk-шотов — реплику голосом с движением губ (EN и RU проверены).\n// Рассказчик (Narrator) в видео не звучит — его голос накладывается при монтаже.\n//\n// Выход (для fill_workflow.js и узлов ниже):\n//   prompt          — промпт видео (→ #prompt)\n//   '#image.image'  — кадр в папке input ComfyUI видео-сервера (тот же относительный путь, что base_image_url)\n//   '#size.length'  — длина в кадрах 24 fps (H3: 5 + 17k; 124 ≈ 5.2 с … 362 ≈ 15 с)\n//   output_prefix   — anima/<сезон>/<серия>/<NN>-<шот> (#save на видео-сервере)\n//   frame_path, frame_dir, frame_file — откуда взять кадр (/media админки) и куда загрузить на видео-сервер\n//   comfy_url       — ComfyUI видео-сервера; local_comfy_url — свой ComfyUI, через него mp4 кладётся в output .99\n//   scene_id, seconds, workflow_file\n// Узлы: SCENE_NODE, TOPIC_NODE, SEASON_NODE, CHARACTERS_NODE (Supabase).\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst SCENE_NODE = 'Scene'\nconst TOPIC_NODE = 'Topic'\nconst SEASON_NODE = 'Season'\nconst CHARACTERS_NODE = 'Characters'\n\n// ── Настройки ──────────────────────────────────────────────────────────────\nconst COMFY_URL = 'http://127.0.0.1:8189'       // Таиланд, RTX 3080 20 GB (туннель thai-tunnel в pm2 на .99)\nconst LOCAL_COMFY_URL = 'http://127.0.0.1:8188' // свой ComfyUI: /upload/image?type=output пишет mp4 в output .99\nconst NARRATOR = 'NARRATOR'                     // тег рассказчика (после norm): его текст не озвучивается в видео\nconst FPS = 24\nconst MIN_FRAMES = 124                          // ≈ 5.2 с — нижняя граница обученного диапазона H3\nconst MAX_FRAMES = 362                          // ≈ 15 с\nconst WORDS_PER_SEC = 2.4                       // темп реплики\nconst STYLE_LINE = 'Keep the exact art style, colors, characters and composition of the first frame.'\n// ───────────────────────────────────────────────────────────────────────────\n\nconst norm = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')\nconst clean = (s) => String(s ?? '').replace(/\\s+/g, ' ').trim()\nconst words = (s) => clean(s).split(' ').filter(Boolean).length\nconst toFrames = (sec) => {\n  const raw = Math.max(5, Math.round(sec * FPS))\n  const valid = raw + ((17 - ((raw - 5) % 17)) % 17) // вверх до 5 + 17k\n  return Math.min(MAX_FRAMES, Math.max(MIN_FRAMES, valid))\n}\nconst isCyrillic = (s) => /[А-Яа-яЁё]/.test(s)\n\ntry {\n  const scene = $(SCENE_NODE).first().json\n  if (!scene?.scene_id) throw new Error(`Нет шота в узле «${SCENE_NODE}»`)\n  const topic = $(TOPIC_NODE).first().json\n  const season = $(SEASON_NODE).first().json ?? {}\n\n  const frame = clean(scene.base_image_url).replace(/\\\\/g, '/').replace(/^\\/+/, '')\n  if (!frame) throw new Error('У шота нет кадра (base_image_url) — сначала сгенерируйте фото')\n  if (/^https?:/i.test(frame)) throw new Error('base_image_url — полный URL; нужен путь относительно ComfyUI/output')\n  const motion = clean(scene.action_prompt || scene.action)\n  if (!motion) throw new Error('У шота нет описания движения (action_prompt) — сначала Постановщик')\n\n  // Персонажи сезона: кто говорит (для описания голоса)\n  const byName = new Map()\n  try {\n    for (const { json: c } of $(CHARACTERS_NODE).all()) if (c?.name) byName.set(norm(c.name), c)\n  } catch {\n    /* без узла персонажей — голос описываем только по реплике */\n  }\n\n  const speakerTag = clean(scene.speaking_character)\n  const line = clean(scene.dialogue_text)\n  const isNarrator = norm(speakerTag) === NARRATOR\n  const talks = !!line && !!speakerTag && !isNarrator && scene.shot_type === 'talk'\n\n  // ── Звук ──\n  let sound\n  if (talks) {\n    const c = byName.get(norm(speakerTag))\n    const who = clean(String(c?.text_prompt ?? '').split(',').slice(0, 2).join(','))\n    const tone = clean(scene.dialogue_direction || scene.speaker_voice_tone)\n    const lang = isCyrillic(line) ? 'Russian' : 'English'\n    sound =\n      `${speakerTag}${who ? ` (${who})` : ''} speaks${tone ? ` in a ${tone} voice` : ''}, in ${lang}, lips moving in sync: \"${line}\" ` +\n      `Sound: only the speaker's voice and quiet ambience${scene.noice ? ` (${clean(scene.noice)})` : ''}, no music.`\n  } else {\n    sound = `Nobody speaks, mouths stay closed. Sound: natural ambience${scene.noice ? ` — ${clean(scene.noice)}` : ''}, no speech, no music.`\n  }\n\n  // ── Длина: реплика или текст рассказчика должны поместиться ──\n  let seconds = Number(scene.audio_duration) || Number(scene.time) || 4\n  if (line) seconds = Math.max(seconds, words(line) / WORDS_PER_SEC + (talks ? 1.2 : 0.6))\n  const length = toFrames(seconds)\n\n  const prompt = [STYLE_LINE, motion, sound].join(' ')\n\n  const dir = `anima/${season.folder || topic.season_id}/${topic.folder || topic.topic_id}`\n  const output_prefix = `${dir}/${String(scene.scena ?? 0).padStart(2, '0')}-${scene.shot_num ?? 1}`\n  const frame_file = frame.split('/').pop()\n  const frame_dir = frame.split('/').slice(0, -1).join('/')\n\n  return [\n    {\n      json: {\n        scene_id: scene.scene_id,\n        prompt,\n        output_prefix,\n        output_dir: dir, // куда положить mp4 на .99 (output/<dir>)\n        started_at: Date.now(), // video_result.js сдаётся через TIMEOUT_MIN\n        seconds: Math.round((length / FPS) * 10) / 10,\n        frame_path: frame,\n        frame_dir,\n        frame_file,\n        '#image.image': frame, // на видео-сервере кадр загружается в input/<frame_dir>/<frame_file>\n        '#size.length': length,\n        comfy_url: COMFY_URL,\n        local_comfy_url: LOCAL_COMFY_URL,\n        workflow_file: 'video-i2v.json',\n      },\n    },\n  ]\n} catch (error) {\n  return [{ json: { error: error.message } }]\n}\n"
+      },
+      "name": "Vars",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "id": "de502734-4ece-4e7b-926a-65ff06748d37"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5ec002a4-1c44-4dc5-b39d-ad66af52f7e7",
+              "leftValue": "={{ $json.error }}",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Vars ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        300
+      ],
+      "id": "dd2e764b-ef9f-41c9-8297-f682bd89a1ad"
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5173/media/{{ $json.frame_path }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Frame",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ],
+      "id": "c1a23dd7-1ed1-4c5d-ac5e-e2b52893e47c"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Vars').first().json.comfy_url }}/upload/image",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "subfolder",
+              "value": "={{ $('Vars').first().json.frame_dir }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "overwrite",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "name": "Upload frame",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "id": "ad4c0145-ba97-46bb-9181-32b71388fe57"
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5173/compute/workflows/{{ $('Vars').first().json.workflow_file }}",
+        "options": {}
+      },
+      "name": "Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ],
+      "id": "ee323d61-1d04-41a2-ace8-9433ff0c4517"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "process_settings",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "file",
+              "keyValue": "={{ $('Vars').first().json.workflow_file }}"
+            }
+          ]
+        }
+      },
+      "name": "Process settings",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        300
+      ],
+      "id": "4f65f14e-c040-4b91-bf40-346bca38788d",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// fill_workflow.js — n8n Code-узел (Mode: Run Once for All Items). ОДИН на все процессы ComfyUI.\n//\n// Собирает процесс для POST <ComfyUI>/prompt из трёх частей:\n//   1. Шаблон — workflows/<файл> (узел WORKFLOW_NODE: HTTP GET http://<админка>/compute/workflows/<файл>).\n//   2. Настройки процесса — строка public.process_settings (узел SETTINGS_NODE; страница «Процессы» админки):\n//        values: { \"#size.width\": 768, \"#lora.strength_model\": 0.42, \"#seed.steps\": 16, … } — постоянные значения\n//        prompt: \"mhbh style, {{prompt}}, {{style}}\" — шаблон промпта (пусто — просто {{prompt}})\n//   3. Переменные запуска — узел VARS_NODE (в каждом конвейере назовите его «Vars»; для кадра — n8n/frame_vars.js):\n//        prompt, refs[], output_prefix, style, seed?, …  а также любые «#метка.поле»: значение — подставятся как есть.\n//\n// По меткам (заголовок узла в ComfyUI, первое слово) заполняется само:\n//   #prompt  ← шаблон промпта с {{переменными}}\n//   #ref1..N ← refs[0..N-1]; лишние #ref удаляются вместе со входом, который на них ссылается\n//            (так же для любого списка: переменная «xs» → узлы #x1..#xN)\n//   #save    ← output_prefix\n//   #seed    ← seed или случайный\n// Скрипт ничего не знает о кадрах, видео или стилях — это задача узла переменных.\n// Выход: { comfy_body: { prompt: <процесс> }, save_node, output_prefix, prompt_text, …переменные без списков }\n// ═══════════════════════════════════════════════════════════════════════════\n\n// Цепочка последовательная: Vars → Workflow → Process settings → Fill workflow; данные берутся по именам узлов.\n// Имена одинаковые во всех конвейерах — скрипт копируется без правок.\nconst VARS_NODE = 'Vars'                  // переменные запуска (frame_vars.js и т.п.)\nconst WORKFLOW_NODE = 'Workflow'          // шаблон процесса\nconst SETTINGS_NODES = ['Process settings', 'process_settings'] // Supabase: process_settings по имени файла (Settings → Always Output Data: вкл.)\n\nconst TEXT_FIELDS = ['text', 'prompt', 'value', 'string']\nconst labelOf = (node) => String(node?._meta?.title ?? '').trim().split(/\\s/)[0].toLowerCase()\nconst render = (tpl, vars) =>\n  String(tpl)\n    .replace(/\\{\\{\\s*([\\w.]+)\\s*\\}\\}/g, (_, k) => (vars[k] == null ? '' : Array.isArray(vars[k]) ? vars[k].join(', ') : String(vars[k])))\n    .replace(/\\s*,\\s*(,\\s*)+/g, ', ') // пустые переменные не оставляют «, ,»\n    .replace(/^\\s*,\\s*|\\s*,\\s*$/g, '')\n    .trim()\n\ntry {\n  let vars\n  try {\n    vars = { ...$(VARS_NODE).first().json }\n  } catch {\n    throw new Error(`Нет узла «${VARS_NODE}» с переменными запуска — назовите так узел frame_vars.js`)\n  }\n  if (vars.error) throw new Error(`${VARS_NODE}: ${vars.error}`)\n\n  // 1. Шаблон: HTTP отдаёт его как json; «Extract from File» — в поле data (объектом или строкой)\n  const raw = $(WORKFLOW_NODE).first().json\n  const src = raw.data !== undefined && !Object.values(raw).some((n) => n && n.class_type) ? raw.data : raw\n  const wf = JSON.parse(JSON.stringify(typeof src === 'string' ? JSON.parse(src) : src))\n  if (!Object.values(wf).some((n) => n && n.class_type)) throw new Error(`В узле «${WORKFLOW_NODE}» не процесс ComfyUI в API-формате`)\n\n  const byLabel = (label) => Object.entries(wf).filter(([, n]) => labelOf(n) === label)\n  const one = (label) => {\n    const found = byLabel(label)\n    if (found.length > 1) throw new Error(`Метка ${label} стоит на нескольких узлах`)\n    return found[0] ?? null\n  }\n  const setField = (key, value) => {\n    const [label, field] = key.split('.')\n    const node = one(label.toLowerCase())\n    if (!node) return // метки нет в этом процессе — настройка не про него\n    if (!field) throw new Error(`«${key}»: нужно «#метка.поле»`)\n    node[1].inputs[field] = value\n  }\n\n  // 2. Настройки процесса: строки может не быть (тогда — по шаблону), но узел должен быть — иначе это ошибка сборки\n  let settings = {}\n  let settingsNode = null\n  for (const name of SETTINGS_NODES) {\n    try {\n      const row = $(name).first().json\n      settingsNode = name\n      // Пустой ответ (строки нет или база не ответила — Always Output Data пропускает его дальше) — не генерируем молча без стиля\n      if (!row || !('settings' in row))\n        throw new Error(\n          `Узел «${name}» вернул пусто: в process_settings нет строки для этого процесса или база не ответила. ` +\n            `Создайте настройки в админке (Настройки → Процессы → «Сохранить») и на сервере читайте их узлом Supabase, не Postgres`,\n        )\n      settings = typeof row.settings === 'string' ? JSON.parse(row.settings) : (row.settings ?? {})\n      break\n    } catch (e) {\n      if (String(e?.message ?? e).includes('вернул пусто')) throw e\n      /* узла с таким именем нет — пробуем следующее */\n    }\n  }\n  if (!settingsNode) throw new Error(`Нет узла настроек процесса — назовите узел Supabase с таблицей process_settings одним из: ${SETTINGS_NODES.join(', ')}`)\n  for (const [k, v] of Object.entries(settings.values ?? {})) setField(k, v)\n\n  // 3. Переменные «#метка.поле» — как есть\n  for (const [k, v] of Object.entries(vars)) if (k.startsWith('#')) setField(k, v)\n\n  // Списки: переменная «refs» → узлы #ref1..#refN; лишние удаляем вместе со входами\n  const prefixes = new Set(Object.values(wf).map(labelOf).map((l) => /^#([a-z_]+)\\d+$/.exec(l)?.[1]).filter(Boolean))\n  for (const p of prefixes) {\n    const list = vars[`${p}s`] ?? vars[p]\n    if (list != null && !Array.isArray(list)) throw new Error(`Переменная ${p}s должна быть списком`)\n    const items = list ?? []\n    const nodes = Object.entries(wf).filter(([, n]) => new RegExp(`^#${p}\\\\d+$`).test(labelOf(n)))\n    if (items.length > nodes.length) throw new Error(`${p}s: значений ${items.length}, а узлов #${p}N в процессе ${nodes.length}`)\n    for (const [id, node] of nodes) {\n      const i = +labelOf(node).slice(p.length + 1)\n      if (i <= items.length) {\n        const field = 'image' in node.inputs ? 'image' : Object.keys(node.inputs).find((f) => !Array.isArray(node.inputs[f]))\n        node.inputs[field] = items[i - 1]\n      } else {\n        delete wf[id]\n        for (const n of Object.values(wf)) for (const [k, v] of Object.entries(n.inputs ?? {})) if (Array.isArray(v) && v[0] === id) delete n.inputs[k]\n      }\n    }\n  }\n\n  // #prompt\n  let promptText = null\n  const pn = one('#prompt')\n  if (pn) {\n    if (!String(vars.prompt ?? '').trim()) throw new Error('Пустой prompt в переменных')\n    promptText = render(settings.prompt?.trim() || '{{prompt}}', vars)\n    pn[1].inputs[TEXT_FIELDS.find((f) => f in pn[1].inputs) ?? 'text'] = promptText\n  }\n\n  // #save\n  const save = one('#save')\n  if (save) {\n    if (!vars.output_prefix) throw new Error('Нет output_prefix в переменных')\n    save[1].inputs.filename_prefix = vars.output_prefix\n  }\n\n  // #seed\n  const seed = one('#seed')\n  if (seed) seed[1].inputs['noise_seed' in seed[1].inputs ? 'noise_seed' : 'seed'] = vars.seed ?? Math.floor(Math.random() * 2 ** 48)\n\n  const plain = Object.fromEntries(Object.entries(vars).filter(([k, v]) => !Array.isArray(v) && !k.startsWith('#')))\n  return [{ json: { ...plain, comfy_body: { prompt: wf }, save_node: save?.[0] ?? null, prompt_text: promptText, prompt_template: settings.prompt?.trim() || '{{prompt}}', settings_node: settingsNode } }]\n} catch (error) {\n  return [{ json: { error: error.message } }]\n}\n"
+      },
+      "name": "Fill workflow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        300
+      ],
+      "id": "49de6385-ecef-498a-8ddd-f6b4fa01c22b"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Vars').first().json.comfy_url }}/prompt",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Fill workflow').first().json.comfy_body) }}"
+      },
+      "name": "Comfy prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        300
+      ],
+      "id": "a78e563e-e466-448c-a804-e8d4e31039ae",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2860,
+        300
+      ],
+      "id": "72554c51-c970-4a80-9917-d1daaa67d551",
+      "webhookId": "f97de3d5-01f2-4fdd-a7b3-428d54196129"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Vars').first().json.comfy_url }}/history/{{ $('Comfy prompt').first().json.prompt_id }}",
+        "options": {}
+      },
+      "name": "History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        300
+      ],
+      "id": "bcd70b66-9167-43db-ad06-69980b2be37e",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════════════════\n// video_result.js — n8n Code-узел «Result» конвейера видео (Mode: Run Once for All Items)\n//\n// Разбирает ответ ComfyUI GET /history/<prompt_id> видео-сервера: нашёл ли #save (VHS_VideoCombine) готовый mp4.\n// Вход:  $input.first().json — ответ /history/<prompt_id>\n//        узлы FILL_NODE (save_node, scene_id) и PROMPT_NODE (prompt_id)\n// Выход: { done: false } — ещё считается (n8n ждёт и спрашивает снова);\n//        { done: true, ok: true, scene_id, filename, subfolder } — файл на видео-сервере (скачать через /view);\n//        { done: true, ok: false, scene_id, error }\n// ═══════════════════════════════════════════════════════════════════════════\n\nconst FILL_NODE = 'Fill workflow'\nconst PROMPT_NODE = 'Comfy prompt'\nconst VARS_NODE = 'Vars'\nconst TIMEOUT_MIN = 60 // видео-сервер мог получить очередь из многих шотов\n\nlet scene_id = null\ntry {\n  const fill = $(FILL_NODE).first().json\n  scene_id = fill.scene_id\n  if (fill.error) return [{ json: { done: true, ok: false, scene_id, error: fill.error } }]\n  const promptId = $(PROMPT_NODE).first().json.prompt_id\n  if (!promptId) return [{ json: { done: true, ok: false, scene_id, error: 'ComfyUI не принял процесс (нет prompt_id)' } }]\n\n  const entry = $input.first().json[promptId]\n  const startedAt = $(VARS_NODE).first().json.started_at ?? Date.now()\n  if (!entry?.status?.completed && Date.now() - startedAt > TIMEOUT_MIN * 60_000)\n    return [{ json: { done: true, ok: false, scene_id, error: `Видео не готово за ${TIMEOUT_MIN} мин (prompt_id ${promptId})` } }]\n  if (!entry) return [{ json: { done: false, scene_id } }] // в очереди или считается\n\n  const status = entry.status ?? {}\n  if (status.status_str === 'error') {\n    const err = (status.messages ?? []).find((m) => m[0] === 'execution_error')?.[1] ?? {}\n    return [{ json: { done: true, ok: false, scene_id, error: `ComfyUI: ${err.node_type ?? ''} ${err.exception_message ?? 'ошибка выполнения'}`.trim() } }]\n  }\n  if (!status.completed) return [{ json: { done: false, scene_id } }]\n\n  const out = entry.outputs?.[fill.save_node] ?? {}\n  const files = [...(out.gifs ?? []), ...(out.videos ?? []), ...(out.images ?? [])].filter((f) => /\\.(mp4|webm|mov)$/i.test(f.filename ?? ''))\n  // VHS с аудио сохраняет и немой файл, и «-audio» — берём со звуком\n  const file = files.find((f) => /-audio\\.\\w+$/i.test(f.filename)) ?? files[0]\n  if (!file) return [{ json: { done: true, ok: false, scene_id, error: 'Нет видео в выходе узла #save' } }]\n  return [{ json: { done: true, ok: true, scene_id, filename: file.filename, subfolder: String(file.subfolder ?? '').replace(/\\\\/g, '/') } }]\n} catch (error) {\n  return [{ json: { done: true, ok: false, scene_id, error: error.message } }]\n}\n"
+      },
+      "name": "Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        300
+      ],
+      "id": "c95400bd-8a3d-44d1-8687-0154a4356d2b"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4536d46a-cd6c-4012-9a86-ebd7098ffac7",
+              "leftValue": "={{ $json.done }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Done?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3520,
+        300
+      ],
+      "id": "494d1747-82f4-44ae-8ec4-8ac02d80295a"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "070a4226-4997-4188-b9d4-a656974a036c",
+              "leftValue": "={{ $json.ok }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3740,
+        300
+      ],
+      "id": "9cad0109-de0e-42fb-aec2-7a8e1ba4e7e0"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Vars').first().json.comfy_url }}/view",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filename",
+              "value": "={{ $json.filename }}"
+            },
+            {
+              "name": "subfolder",
+              "value": "={{ $json.subfolder }}"
+            },
+            {
+              "name": "type",
+              "value": "output"
+            }
+          ]
+        }
+      },
+      "name": "Download video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3960,
+        300
+      ],
+      "id": "e584dbbb-fbff-4d28-b9ac-69c6ecfc003c"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Vars').first().json.local_comfy_url }}/upload/image",
+        "options": {},
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "type",
+              "value": "output"
+            },
+            {
+              "parameterType": "formData",
+              "name": "subfolder",
+              "value": "={{ $('Vars').first().json.output_dir }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "overwrite",
+              "value": "false"
+            }
+          ]
+        }
+      },
+      "name": "Save video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4180,
+        300
+      ],
+      "id": "35d11add-eb0b-47c8-9272-7a598023514f"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scenes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "scene_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook видео').first().json.body.scene_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "video_file",
+              "fieldValue": "={{ $json.subfolder }}/{{ $json.name }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "ready"
+            }
+          ]
+        }
+      },
+      "name": "Update scene",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4400,
+        300
+      ],
+      "id": "4a7c6698-805e-47f0-8158-56d621b0665d",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scenes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "scene_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook видео').first().json.body.scene_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "error"
+            }
+          ]
+        }
+      },
+      "name": "Save error",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3960,
+        520
+      ],
+      "id": "c45fa354-4e90-4453-b7bb-afc3238b4597",
+      "credentials": {
+        "supabaseApi": {
+          "id": "2FAk4ZGdNYtm1sHc",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook видео": {
+      "main": [
+        [
+          {
+            "node": "Scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scene": {
+      "main": [
+        [
+          {
+            "node": "Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Topic": {
+      "main": [
+        [
+          {
+            "node": "Season",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Season": {
+      "main": [
+        [
+          {
+            "node": "Characters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Characters": {
+      "main": [
+        [
+          {
+            "node": "Vars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vars": {
+      "main": [
+        [
+          {
+            "node": "Vars ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vars ok?": {
+      "main": [
+        [
+          {
+            "node": "Frame",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frame": {
+      "main": [
+        [
+          {
+            "node": "Upload frame",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload frame": {
+      "main": [
+        [
+          {
+            "node": "Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow": {
+      "main": [
+        [
+          {
+            "node": "Process settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process settings": {
+      "main": [
+        [
+          {
+            "node": "Fill workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fill workflow": {
+      "main": [
+        [
+          {
+            "node": "Comfy prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comfy prompt": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "History": {
+      "main": [
+        [
+          {
+            "node": "Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result": {
+      "main": [
+        [
+          {
+            "node": "Done?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Done?": {
+      "main": [
+        [
+          {
+            "node": "Ok?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ok?": {
+      "main": [
+        [
+          {
+            "node": "Download video",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download video": {
+      "main": [
+        [
+          {
+            "node": "Save video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save video": {
+      "main": [
+        [
+          {
+            "node": "Update scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "pinData": {}
+}

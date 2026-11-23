@@ -17,7 +17,8 @@ export const LABELS: Record<string, LabelSpec> = {
   '#ref3': { label: '#ref3', fields: ['image'], what: 'картинка 3-го персонажа' },
   '#lora': { label: '#lora', fields: ['lora_name'], what: 'LoRA и сила из стиля сезона' },
   '#seed': { label: '#seed', fields: ['seed', 'noise_seed'], what: 'seed' },
-  '#size': { label: '#size', fields: ['width', 'height'], what: 'размер кадра' },
+  '#size': { label: '#size', fields: ['width', 'height'], what: 'размер кадра (у видео ещё length — n8n считает по реплике)' },
+  '#image': { label: '#image', fields: ['image'], what: 'первый кадр видео — кадр раскадровки шота' },
   '#save': { label: '#save', fields: ['filename_prefix'], what: 'путь результата anima/<сезон>/<серия>/<код>' },
 }
 
@@ -37,6 +38,13 @@ export const SLOTS: Slot[] = [
     description: 'Кадр шота: 0–3 референса персонажей. Шаблон на 3; лишние #ref n8n удаляет вместе со входом images.imageN — без персонажей тот же процесс работает как текст → картинка',
     required: ['#prompt', '#ref1', '#save'],
     optional: ['#ref2', '#ref3', '#lora', '#seed', '#size', '#negative'],
+  },
+  {
+    file: 'video-i2v.json',
+    title: 'Видео шота',
+    description: 'Кадр раскадровки → видео со звуком (MiniMax H3 i2v, сервер Таиланд). У #talk-шотов реплика звучит голосом персонажа; длину n8n считает по реплике',
+    required: ['#prompt', '#image', '#size', '#save'],
+    optional: ['#seed', '#lora'],
   },
   { file: 'character.json', title: 'Портрет персонажа', description: 'Референс персонажа для библиотеки сезона', required: ['#prompt', '#save'], optional: ['#lora', '#seed', '#size', '#negative'] },
 ]

@@ -1,6 +1,6 @@
 // Настройки процесса ComfyUI поверх шаблона: постоянные значения размеченных узлов (размер, LoRA, шаги…) и шаблон промпта.
 // Хранятся в public.process_settings, применяет n8n/fill_workflow.js. Поля, которые n8n заполняет при каждом запуске
-// (#prompt, #refN, #save, #seed.seed), здесь не правятся.
+// (#prompt, #refN, #save, #seed.seed, #image, #size.length у видео), здесь не правятся.
 import { useEffect, useMemo, useState } from 'react'
 import { RotateCcw, Save } from 'lucide-react'
 import { toast } from 'sonner'
@@ -18,6 +18,8 @@ const RUNTIME = (label: string, field: string) =>
   (label === '#prompt' && ['text', 'prompt', 'value', 'string'].includes(field)) ||
   /^#[a-z_]+\d+$/.test(label) ||
   (label === '#save' && field === 'filename_prefix') ||
+  (label === '#image' && field === 'image') ||
+  (label === '#size' && field === 'length') ||
   (label === '#seed' && ['seed', 'noise_seed'].includes(field))
 
 const SIZE_PRESETS = [
