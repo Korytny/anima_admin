@@ -30,7 +30,7 @@ const SIZE_PRESETS = [
   { label: '16:9', w: 1344, h: 768 },
 ]
 
-export const PROMPT_VARS = ['prompt', 'style']
+export const PROMPT_VARS = ['prompt', 'style', 'setting']
 
 export function ProcessSettingsEditor({ file, workflow }: { file: string; workflow: unknown }) {
   const fields = useMemo<Field[]>(() => {
@@ -103,7 +103,7 @@ export function ProcessSettingsEditor({ file, workflow }: { file: string; workfl
           className="font-mono text-xs"
         />
         <div className="mt-1 text-fg-3">
-          Переменные: <span className="font-mono">{'{{prompt}}'}</span> — промпт шота, <span className="font-mono">{'{{style}}'}</span> — добавка стиля сезона. Триггер LoRA пишите
+          Переменные: <span className="font-mono">{'{{prompt}}'}</span> — промпт шота, <span className="font-mono">{'{{style}}'}</span> — добавка стиля сезона, <span className="font-mono">{'{{setting}}'}</span> — мир и эпоха сезона (кадр). Триггер LoRA пишите
           здесь же, например <span className="font-mono">mhbh style, {'{{prompt}}'}, {'{{style}}'}</span>.
           {unknownVars.length > 0 && <span className="ml-1 text-gold">Неизвестные: {unknownVars.join(', ')} — подставятся пустыми.</span>}
         </div>

@@ -6,6 +6,7 @@
 //   refs          — картинки персонажей по порядку (→ #ref1..#refN)
 //   output_prefix — путь кадра anima/<seasons.folder>/<topics.folder>/<NN>-<шот> (та же схема, что lib/media.ts админки)
 //   style         — добавка стиля сезона (seasons.style)
+//   setting       — мир и эпоха сезона (seasons.setting) → {{setting}} в шаблоне промпта процесса
 //   scene_id, ref_count, workflow_file — для следующих узлов
 // Узлы: REFS_NODE (scene_refs.js), SCENE_NODE, TOPIC_NODE, SEASON_NODE (Supabase).
 // ═══════════════════════════════════════════════════════════════════════════
@@ -45,6 +46,7 @@ try {
         ref_count: refs.ref_count,
         output_prefix,
         style: STYLES[season.style] ?? '',
+        setting: String(season.setting ?? '').trim(),
         workflow_file: 'frame-refs.json', // один процесс и с персонажами, и без: лишние #ref заполнитель удаляет
       },
     },
