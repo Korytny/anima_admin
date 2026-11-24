@@ -9,7 +9,7 @@ import { absPath, mediaUrl, outputPrefix, sceneCode, scenePath } from '@/lib/med
 import { listVariants, variantPrefix, videoVariantPrefix, type Variant } from '@/api/media'
 import { PathHint } from '@/components/PathHint'
 import { PromptDiff } from '@/components/PromptDiff'
-import { SCENE_STATUS, isTalkLine, statusOptions, videoBlocker } from '@/lib/status'
+import { SCENE_STAGES, SCENE_STATUS, isTalkLine, sceneStage, videoBlocker } from '@/lib/status'
 import { useDraft } from '@/lib/useDraft'
 import { useCardLayout } from '@/lib/useCardLayout'
 import { cn, copyText, fmtDateTime } from '@/lib/utils'
@@ -20,13 +20,14 @@ import { Button, ConfirmDialog, Kbd, Tabs, Thumb } from '@/components/ui'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { Lightbox } from '@/components/Lightbox'
 
-function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined, blocks: { prompt: ReactNode; audio: ReactNode }): GroupDef<Scene>[] {
-  const status = scene.status
+function groups(scene: Scene, topic: Topic | undefined, season: Season | undefined, blocks: { general: ReactNode; prompt: ReactNode; audio: ReactNode }): GroupDef<Scene>[] {
   return [
     {
-      // Всегда открыта; остальные поля сюда переносятся через «Остальное». Номера сцены/шота не правятся — в «Остальном»
+      // Всегда открыта; остальные поля сюда переносятся через «Остальное». Этап — вычисляемый (lib/status.ts),
+      // scenes.status — технический флаг n8n (генерация/ошибка), руками не выбирается
       title: 'Общее',
-      fields: [{ key: 'status', type: 'select', options: statusOptions(SCENE_STATUS, [status]).map((o) => ({ ...o, label: `${o.label} (${o.value})` })) }],
+      before: blocks.general,
+      fields: [],
     },
     {
       title: 'Кадр',
@@ -131,7 +132,8 @@ export function SceneCard({ scene, siblings, onClose, onDelete }: { scene: Scene
       header={
         scene && (
           <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-flex h-5 shrink-0 items-center rounded bg-raised px-1.5 font-mono text-xs">
+            <span className="inline-flex h-5 shrink-0 items-center rounded bg-raised px-1.5 font-mono text-xs" title="Локация · сцена.шот">
+              {scene.location_num != null && <span className="text-fg-3">Л{scene.location_num}&nbsp;·&nbsp;</span>}
               {scene.scena ?? '—'}.{scene.shot_num ?? '—'}
             </span>
             <h2 className="min-w-0 truncate text-base font-semibold">{scene.speaking_character || `Сцена ${scene.scena ?? ''}`}</h2>
@@ -163,7 +165,27 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
   const [applyAll, setApplyAll] = useState(false)
   const topic = topics.find((t) => t.topic_id === scene.topic)
   const season = seasons.find((x) => x.id === topic?.season_id)
+  const stage = sceneStage(scene, topic)
+  const tech = scene.status === 'generating' || scene.status === 'error' ? SCENE_STATUS[scene.status] : null
   const blocks = {
+    general: (
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-fg-3">Этап</span>
+        <SceneStageBadge scene={scene} topic={topic} />
+        <span className="text-fg-3">{SCENE_STAGES[stage].hint}</span>
+        {tech && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            title="Снять пометку, если n8n не обновил статус (генерация зависла или ошибка уже не актуальна)"
+            onClick={() => updateScene(scene.scene_id, { status: null })}
+          >
+            Сбросить «{tech.label}»
+          </Button>
+        )}
+      </div>
+    ),
     prompt: draft ? <PromptBlock scene={draft} cast={cast} /> : null,
     audio:
       scene.dialogue_text || scene.audio_file ? (
@@ -182,7 +204,7 @@ function Body({ scene, siblings, onDelete }: { scene: Scene; siblings: Scene[]; 
         </div>
       ) : null,
   }
-  const codeGroups = useMemo(() => (draft ? groups(draft, topic, season, blocks) : []), [draft, topic, season, cast, scene.audio_file, scene.audio_duration, scene.dialogue_text, scene.dialogue_direction]) // eslint-disable-line react-hooks/exhaustive-deps
+  const codeGroups = useMemo(() => (draft ? groups(draft, topic, season, blocks) : []), [draft, topic, season, cast, scene.status, scene.base_image_url, scene.video_file, scene.visual_prompt, scene.manual_prompt, scene.audio_file, scene.audio_duration, scene.dialogue_text, scene.dialogue_direction]) // eslint-disable-line react-hooks/exhaustive-deps
   const layout = useCardLayout('card:scene', codeGroups, draft)
   // Варианты кадра на диске (каждая перегенерация — новый файл рядом); основной — тот, что в base_image_url
   const [variants, setVariants] = useState<Variant[]>([])

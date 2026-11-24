@@ -4,11 +4,11 @@ import { Film, ImageOff } from 'lucide-react'
 import type { Scene } from '@/types'
 import { sceneCast, seasonCharacters, useData, useScenesByTopic } from '@/store/data'
 import { CastChips } from '@/components/CastChips'
-import { SCENE_STATUS, statusMeta } from '@/lib/status'
+import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { mediaUrl, sceneCode } from '@/lib/media'
 import { cn, storageGet } from '@/lib/utils'
 import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
-import { ConfirmDialog, EmptyState, SegmentedControl, StatusBadge } from '@/components/ui'
+import { ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
 type Show = 'all' | 'missing'
@@ -27,7 +27,8 @@ export function AnimationPage() {
 function Board({ topicId }: { topicId: string }) {
   const [params, setParams] = useSearchParams()
   const { characters, topics, loading, deleteScenes, isRunning } = useData()
-  const seasonId = topics.find((t) => t.topic_id === topicId)?.season_id
+  const topic = topics.find((t) => t.topic_id === topicId)
+  const seasonId = topic?.season_id
   const pool = useMemo(() => seasonCharacters(seasonId, characters), [seasonId, characters])
   const all = useScenesByTopic().get(topicId) ?? []
   const [show, setShow] = useState<Show>('all')
@@ -78,6 +79,7 @@ function Board({ topicId }: { topicId: string }) {
                 <Clip
                   key={s.scene_id}
                   scene={s}
+                  topic={topic}
                   cast={sceneCast(s, pool)}
                   running={isRunning('video', s.scene_id)}
                   active={s.scene_id === activeId}
@@ -106,7 +108,7 @@ function Board({ topicId }: { topicId: string }) {
 }
 
 /** Видео шота: играет без звука при наведении; нет видео — кадр с пометкой. */
-function Clip({ scene, cast, running, active, onClick }: { scene: Scene; cast: { name: string; known: boolean }[]; running: boolean; active: boolean; onClick: () => void }) {
+function Clip({ scene, topic, cast, running, active, onClick }: { scene: Scene; topic?: { url_final: string | null }; cast: { name: string; known: boolean }[]; running: boolean; active: boolean; onClick: () => void }) {
   const video = mediaUrl(scene.video_file)
   const poster = mediaUrl(scene.base_image_url)
   const [broken, setBroken] = useState<string>()
@@ -157,7 +159,7 @@ function Clip({ scene, cast, running, active, onClick }: { scene: Scene; cast: {
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 p-2">
         <div className="flex items-center gap-1.5">
-          <StatusBadge meta={statusMeta(SCENE_STATUS, scene.status)} />
+          <SceneStageBadge scene={scene} topic={topic} />
           {scene.shot_type && <span className="truncate text-[11px] text-fg-3">{scene.shot_type}</span>}
         </div>
         {scene.action ? <p className="line-clamp-4 text-xs text-fg-2">{scene.action}</p> : <p className="text-xs text-fg-3">нет видео-промпта (action)</p>}

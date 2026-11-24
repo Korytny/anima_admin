@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Copy, ExternalLink, Loader2, Scissors, Theater, Trash2 } from 'lucide-react'
 import type { Season, Topic } from '@/types'
 import { scenePreview, seasonTitle, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
-import { SCENE_STATUS, TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
+import { TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
+import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { useDraft } from '@/lib/useDraft'
 import { copyText, fmtBytes, fmtDateTime, fmtDuration, timeAgo } from '@/lib/utils'
 import { mediaUrl } from '@/lib/media'
@@ -171,7 +172,7 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
                 </span>
                 <Thumb src={scenePreview(s)} className="h-8 w-14 shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{s.dialogue_text || s.action || '—'}</span>
-                <StatusBadge meta={statusMeta(SCENE_STATUS, s.status)} />
+                <SceneStageBadge scene={s} topic={topic} />
               </button>
             ))}
           </div>
