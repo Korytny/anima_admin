@@ -6,7 +6,7 @@ import { topicPreview, useData, useScenesByTopic } from '@/store/data'
 import { montageConfigured } from '@/api/pipeline'
 import { mediaUrl, sceneCode } from '@/lib/media'
 import { cn, fmtDuration, storageGet } from '@/lib/utils'
-import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
+import { LAST_TOPIC_KEY, TopicSelect, useLastTopic } from '@/components/TopicSelect'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { Button, ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
 import { SceneCard } from './SceneCard'
@@ -23,8 +23,8 @@ type Mode = 'draft' | 'final'
  *  «Черновик» проигрывает видео шотов подряд в браузере; «Готовый ролик» — topics.url_final после монтажа в n8n. */
 export function MontagePage() {
   const { topicId } = useParams()
+  const last = useLastTopic()
   if (!topicId) {
-    const last = storageGet<string | null>(LAST_TOPIC_KEY, null)
     if (last) return <Navigate to={`/montage/${last}`} replace />
     return <EmptyState icon={<Scissors />} title="Выберите ролик" action={<TopicSelect value="" base="/montage" className="w-72" />} />
   }

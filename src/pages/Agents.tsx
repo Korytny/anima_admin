@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import { Bot, ChevronRight, Sparkles, Copy, CopyPlus, History, Plus, RotateCcw, Search, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Agent, AgentPromptVersion } from '@/types'
+import type { Agent, AgentPromptVersion, LlmProviderRow } from '@/types'
 import { api } from '@/api'
 import { PromptDiff } from '@/components/PromptDiff'
 import { useAssistant } from '@/components/Assistant'
@@ -21,16 +21,30 @@ const agentName = (a: Agent) => a.name || `Агент #${a.id}`
 /** Переменные вида {{var}} в промпте. */
 const promptVars = (p: string | null) => [...new Set([...(p ?? '').matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => m[1]))]
 
-const GROUPS: GroupDef<Agent>[] = [
-  {
-    title: 'Агент',
-    fields: [
-      { key: 'name' },
-      { key: 'description', type: 'textarea', rows: 2 },
-      { key: 'model', mono: true },
-      { key: 'is_active', type: 'bool' },
-    ],
-  },
+/** Поля карточки. Провайдер — из llm_providers («Настройки → Интеграции»); модель — из его списка,
+ *  нет списка — свободный ввод. Модель не из списка остаётся выбранной с пометкой. */
+const agentGroups = (providers: LlmProviderRow[], provider: string | null, model: string | null): GroupDef<Agent>[] => {
+  const models = providers.find((p) => p.id === provider)?.models ?? []
+  const providerOptions = [{ value: '', label: '—' }, ...providers.map((p) => ({ value: p.id, label: p.title || p.id }))]
+  if (provider && !providers.some((p) => p.id === provider)) providerOptions.push({ value: provider, label: `${provider} (нет в интеграциях)` })
+  const modelOptions = [{ value: '', label: '—' }, ...models.map((m) => ({ value: m, label: m }))]
+  if (model && !models.includes(model)) modelOptions.push({ value: model, label: `${model} (нет в списке)` })
+  return [
+    {
+      title: 'Агент',
+      fields: [
+        { key: 'name' },
+        { key: 'description', type: 'textarea', rows: 2 },
+        { key: 'provider', type: 'select', options: providerOptions },
+        models.length ? { key: 'model', type: 'select', options: modelOptions } : { key: 'model', mono: true },
+        { key: 'is_active', type: 'bool' },
+      ],
+    },
+    ...GROUPS_REST,
+  ]
+}
+
+const GROUPS_REST: GroupDef<Agent>[] = [
   { title: 'Промпт', fields: [{ key: 'prompt', type: 'textarea', rows: 28, mono: true }] },
   {
     title: 'Системное',
@@ -158,7 +172,7 @@ export function AgentsPage() {
             key={active.id}
             agent={active}
             onDelete={() => setConfirm([active.id])}
-            onDuplicate={() => add({ name: `${agentName(active)} (копия)`, description: active.description, prompt: active.prompt, model: active.model })}
+            onDuplicate={() => add({ name: `${agentName(active)} (копия)`, description: active.description, prompt: active.prompt, model: active.model, provider: active.provider })}
           />
         )}
       </SidePanel>
@@ -199,6 +213,11 @@ function AgentBody({ agent, onDelete, onDuplicate }: { agent: Agent; onDelete: (
     return a
   }
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(agent, 'id', save)
+  const [providers, setProviders] = useState<LlmProviderRow[]>([])
+  useEffect(() => {
+    api.listLlmProviders().then(setProviders).catch(() => setProviders([]))
+  }, [])
+  const groups = useMemo(() => agentGroups(providers, draft?.provider ?? null, draft?.model ?? null), [providers, draft?.provider, draft?.model])
   if (!draft) return null
   const vars = promptVars(draft.prompt)
   const promptDirty = dirtyKeys.has('prompt')
@@ -214,7 +233,7 @@ function AgentBody({ agent, onDelete, onDuplicate }: { agent: Agent; onDelete: (
             ))}
           </div>
         )}
-        <FieldGroups groups={GROUPS} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
+        <FieldGroups groups={groups} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
         <PromptVersions agent={agent} tick={versionsTick} locked={dirty} onRestored={() => setVersionsTick((t) => t + 1)} />
       </PanelScroll>
       <PanelFooter>

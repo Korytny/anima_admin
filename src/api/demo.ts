@@ -20,9 +20,6 @@ const db = {
   ] as User[],
   integrations: [
     { id: 'runpod', title: 'Runpod', kind: 'compute', key_hint: null, config: { endpoint: '' }, status: 'not_configured', checked_at: null },
-    { id: 'anthropic', title: 'Anthropic', kind: 'llm', key_hint: null, config: {}, status: 'not_configured', checked_at: null },
-    { id: 'openai', title: 'OpenAI', kind: 'llm', key_hint: null, config: {}, status: 'not_configured', checked_at: null },
-    { id: 'google', title: 'Google Gemini', kind: 'llm', key_hint: null, config: {}, status: 'not_configured', checked_at: null },
     { id: 's3', title: 'S3 хранилище', kind: 'storage', key_hint: null, config: { bucket: '', region: '' }, status: 'not_configured', checked_at: null },
   ] as Integration[],
   system: { timezone: 'Europe/Moscow', date_format: 'dd.MM.yyyy HH:mm', media_base_url: '' } as SystemSettings,

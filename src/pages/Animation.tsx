@@ -6,8 +6,8 @@ import { sceneCast, seasonCharacters, useData, useScenesByTopic } from '@/store/
 import { CastChips } from '@/components/CastChips'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { mediaUrl, sceneCode } from '@/lib/media'
-import { cn, storageGet } from '@/lib/utils'
-import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
+import { cn } from '@/lib/utils'
+import { LAST_TOPIC_KEY, TopicSelect, useLastTopic } from '@/components/TopicSelect'
 import { ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
@@ -16,8 +16,8 @@ type Show = 'all' | 'missing'
 /** Анимация серии: как раскадровка, но карточка — видео шота (video_file), под ним видео-промпт из scenes.action. */
 export function AnimationPage() {
   const { topicId } = useParams()
+  const last = useLastTopic()
   if (!topicId) {
-    const last = storageGet<string | null>(LAST_TOPIC_KEY, null)
     if (last) return <Navigate to={`/animation/${last}`} replace />
     return <EmptyState icon={<Film />} title="Выберите ролик" action={<TopicSelect value="" base="/animation" className="w-72" />} />
   }

@@ -6,7 +6,7 @@ import type { Scene } from '@/types'
 import { GENERATING, sceneCast, sortScenes, scenePreview, seasonCharacters, shortId, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { SCENE_STAGES, SCENE_STAGE_ORDER, TOPIC_STATUS, needsAudio, sceneStage, statusMeta, videoBlocker } from '@/lib/status'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
-import { fmtDuration, storageGet, timeAgo, useHotkey } from '@/lib/utils'
+import { fmtDuration, timeAgo, useHotkey } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
 import { CastChips } from '@/components/CastChips'
 import {
@@ -22,14 +22,14 @@ import {
   Thumb,
 } from '@/components/ui'
 import { SceneCard } from './SceneCard'
-import { LAST_TOPIC_KEY as LAST_KEY, TopicSelect } from '@/components/TopicSelect'
+import { LAST_TOPIC_KEY as LAST_KEY, TopicSelect, useLastTopic } from '@/components/TopicSelect'
 import { audioConfigured, pipelineConfigured, videoConfigured } from '@/api/pipeline'
 
 
 export function ScenesPage() {
   const { topicId } = useParams()
+  const last = useLastTopic()
   if (!topicId) {
-    const last = storageGet<string | null>(LAST_KEY, null)
     return last ? <Navigate to={`/scenes/${last}`} replace /> : <NoTopic />
   }
   return <TopicScenes key={topicId} topicId={topicId} />

@@ -5,15 +5,15 @@ import type { Scene } from '@/types'
 import { seasonCharacters, useData, useScenesByTopic } from '@/store/data'
 import { NARRATOR, checkScript, parseScript, type ParsedScript, type ScriptScene } from '@/lib/script'
 import { checkShots, parseShots, type ParsedShots } from '@/lib/shots'
-import { cn, ranges, storageGet } from '@/lib/utils'
-import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
+import { cn, ranges } from '@/lib/utils'
+import { LAST_TOPIC_KEY, TopicSelect, useLastTopic } from '@/components/TopicSelect'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { Badge, Button, EmptyState, Kbd, Textarea } from '@/components/ui'
 
 export function ScriptPage() {
   const { topicId } = useParams()
+  const last = useLastTopic()
   if (!topicId) {
-    const last = storageGet<string | null>(LAST_TOPIC_KEY, null)
     if (last) return <Navigate to={`/script/${last}`} replace />
     return <EmptyState icon={<ScrollText />} title="Выберите ролик" action={<TopicSelect value="" base="/script" className="w-72" />} />
   }

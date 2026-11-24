@@ -45,6 +45,20 @@ export async function requestEpisodeScript(topicId: string) {
   if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
 
+// Шоты серии: админка шлёт только topic_id. n8n берёт сценарий (script_scenas), библию, персонажей и промпт
+// Редактора из БД и пишет ответ в topics.script_shots.
+const SHOTS_WEBHOOK = hook(import.meta.env.VITE_N8N_SHOTS_WEBHOOK)
+export const shotsPipelineConfigured = !!SHOTS_WEBHOOK
+export async function requestEpisodeShots(topicId: string) {
+  if (!SHOTS_WEBHOOK) throw new Error('Не задан VITE_N8N_SHOTS_WEBHOOK в .env.local')
+  const res = await fetch(SHOTS_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'episode_shots', topic_id: topicId }),
+  })
+  if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}
+
 // Озвучка, видео шота и монтаж серии: админка шлёт только id. n8n сам берёт данные из БД
 // и пишет результат в scenes.audio_file / audio_duration, scenes.video_file / video_sub, topics.url_final
 // (музыка по локации накладывается при монтаже).
@@ -76,6 +90,7 @@ export const requestLocationMusic = (topicId: string, locationNum: number | null
 export const WEBHOOKS = [
   { step: 'Кадр шота', env: 'VITE_N8N_IMAGE_WEBHOOK', on: !!IMAGE_WEBHOOK, body: "{action:'scene_image', scene_id, topic_id}", writes: 'scenes.base_image_url, char_img_url, status' },
   { step: 'Сценарий серии', env: 'VITE_N8N_SCRIPT_WEBHOOK', on: !!SCRIPT_WEBHOOK, body: "{action:'episode_script', topic_id}", writes: 'topics.script_scenas' },
+  { step: 'Шоты серии', env: 'VITE_N8N_SHOTS_WEBHOOK', on: !!SHOTS_WEBHOOK, body: "{action:'episode_shots', topic_id}", writes: 'topics.script_shots' },
   { step: 'Озвучка шота', env: 'VITE_N8N_AUDIO_WEBHOOK', on: !!AUDIO_WEBHOOK, body: "{action:'scene_audio', scene_id}", writes: 'scenes.audio_file, audio_duration' },
   { step: 'Видео шота', env: 'VITE_N8N_VIDEO_WEBHOOK', on: !!VIDEO_WEBHOOK, body: "{action:'scene_video', scene_id}", writes: 'scenes.video_file, video_sub' },
   { step: 'Музыка локации', env: 'VITE_N8N_MUSIC_WEBHOOK', on: !!MUSIC_WEBHOOK, body: "{action:'location_music', topic_id, location_num, scene_ids}", writes: 'scenes.music_file' },

@@ -5,8 +5,8 @@ import type { Scene } from '@/types'
 import { useData, useScenesByTopic } from '@/store/data'
 import { musicConfigured } from '@/api/pipeline'
 import { mediaUrl, sceneCode } from '@/lib/media'
-import { fmtDuration, storageGet } from '@/lib/utils'
-import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
+import { fmtDuration } from '@/lib/utils'
+import { LAST_TOPIC_KEY, TopicSelect, useLastTopic } from '@/components/TopicSelect'
 import { Button, ConfirmDialog, EmptyState, Textarea } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
@@ -40,8 +40,8 @@ const distinct = (xs: (string | null)[]) => [...new Set(xs.map((x) => x?.trim() 
 /** Музыка серии: на каждую локацию — описание для Suno (scenes.music) и трек (scenes.music_file), генерация через n8n. */
 export function MusicPage() {
   const { topicId } = useParams()
+  const last = useLastTopic()
   if (!topicId) {
-    const last = storageGet<string | null>(LAST_TOPIC_KEY, null)
     if (last) return <Navigate to={`/music/${last}`} replace />
     return <EmptyState icon={<Music2 />} title="Выберите ролик" action={<TopicSelect value="" base="/music" className="w-72" />} />
   }

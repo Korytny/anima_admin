@@ -43,6 +43,7 @@ export interface Season {
   source: string | null // первоисточник и версия канона
   folder: string | null // папка на диске (anima/<folder>/characters), назначает админка один раз
   style: string | null // визуальный стиль сезона: id из lib/styles.ts (supabase/season_style.sql)
+  setting: string | null // мир и эпоха для промпта кадра, {{setting}} (supabase/season_setting.sql)
 }
 
 /** public.scenes — сцена (шот) ролика */
@@ -122,7 +123,18 @@ export interface Agent {
   description: string | null
   prompt: string | null // системный промпт, markdown
   model: string | null
+  provider: string | null // id из llm_providers
   is_active: boolean | null
+}
+
+/** public.llm_providers — провайдер моделей для агентов (supabase/llm_providers.sql). Читает n8n. */
+export interface LlmProviderRow {
+  id: string
+  title: string | null
+  base_url: string | null
+  api_key: string | null
+  models: string[]
+  updated_at: string | null
 }
 
 /** public.agent_prompt_versions — версия промпта агента (supabase/agent_prompt_versions.sql). agents.prompt = последняя. */

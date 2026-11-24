@@ -1,6 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import type { Agent, AgentPromptVersion, ProcessSettings, Task, TaskComment, TeamMember, Season, Character, Scene, Topic } from '@/types'
+import type { Agent, AgentPromptVersion, LlmProviderRow, ProcessSettings, Task, TaskComment, TeamMember, Season, Character, Scene, Topic } from '@/types'
 
 const PAGE = 1000
 
@@ -162,6 +162,18 @@ export const supabaseData = {
 
   async addPromptVersion(v: Pick<AgentPromptVersion, 'agent_id' | 'prompt' | 'model' | 'source' | 'note'>) {
     return check(await supabase.from('agent_prompt_versions').insert(v).select().single()) as AgentPromptVersion
+  },
+
+  // llm_providers: id text, ключ хранится как есть (тестовая система)
+  async listLlmProviders() {
+    return check(await supabase.from('llm_providers').select('*').order('id')) as LlmProviderRow[]
+  },
+  async saveLlmProvider(row: Partial<LlmProviderRow> & { id: string }) {
+    const { updated_at: _u, ...rest } = row
+    return check(await supabase.from('llm_providers').upsert({ ...rest, updated_at: new Date().toISOString() }).select().single()) as LlmProviderRow
+  },
+  async deleteLlmProvider(id: string) {
+    check(await supabase.from('llm_providers').delete().eq('id', id))
   },
 
   async deleteAgents(ids: number[]) {

@@ -4,7 +4,7 @@ import { BookOpen, Clapperboard, Wand2, LayoutGrid, Library, Plus, ScrollText, T
 import type { Character, Season, Topic } from '@/types'
 import { SEASON_KEY, STAGES, characterImages, seasonCharacters, seasonEpisodes, seasonTitle, topicStage, topicTitle, useData, useScenesByTopic, type Stage } from '@/store/data'
 import { useDraft } from '@/lib/useDraft'
-import { requestEpisodeScript, scriptPipelineConfigured } from '@/api/pipeline'
+import { requestEpisodeScript, requestEpisodeShots, scriptPipelineConfigured, shotsPipelineConfigured } from '@/api/pipeline'
 import { toast } from 'sonner'
 import { cn, fmtDateTime, storageGet } from '@/lib/utils'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
@@ -21,6 +21,7 @@ const SEASON_GROUPS: GroupDef<Season>[] = [
       { key: 'title', required: true },
       { key: 'logline', label: 'логлайн', type: 'textarea', rows: 3 },
       { key: 'theme', label: 'сквозной вопрос', type: 'textarea', rows: 2 },
+      { key: 'setting', label: 'мир и эпоха — в каждый кадр ({{setting}}), по-английски: ancient India, Mahabharata era…', type: 'textarea', rows: 2 },
       { key: 'status' },
     ],
   },
@@ -279,6 +280,8 @@ function EpisodeBody({ topic, onClose }: { topic: Topic; onClose: () => void }) 
   const groups = useMemo(() => episodeGroups(seasonCharacters(topic.season_id, characters), seasons), [topic.season_id, characters, seasons])
   const [confirmScript, setConfirmScript] = useState(false)
   const [sending, setSending] = useState(false)
+  const [confirmShots, setConfirmShots] = useState(false)
+  const [sendingShots, setSendingShots] = useState(false)
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(topic, 'topic_id', (patch) => updateTopic(topic.topic_id, patch))
   if (!draft) return null
   const id = topic.topic_id
@@ -293,6 +296,18 @@ function EpisodeBody({ topic, onClose }: { topic: Topic; onClose: () => void }) 
       toast.error('Не удалось запустить', { description: e instanceof Error ? e.message : String(e) })
     } finally {
       setSending(false)
+    }
+  }
+  const hasShots = !!topic.script_shots?.trim()
+  const sendShots = async () => {
+    setSendingShots(true)
+    try {
+      await requestEpisodeShots(id)
+      toast.success('Отправлено в n8n', { description: 'Шоты появятся в «Сценарий → Шоты», когда n8n запишет их в БД.' })
+    } catch (e) {
+      toast.error('Не удалось запустить', { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setSendingShots(false)
     }
   }
   const links = [
@@ -313,6 +328,22 @@ function EpisodeBody({ topic, onClose }: { topic: Topic; onClose: () => void }) 
             title={!scriptPipelineConfigured ? 'Не задан VITE_N8N_SCRIPT_WEBHOOK' : dirty ? 'Сначала сохраните — n8n берёт данные из БД' : 'n8n соберёт данные серии и запустит агента'}
           >
             <Wand2 /> {sending ? 'Отправка…' : hasScript ? 'Перегенерировать сценарий' : 'Сгенерировать сценарий'}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!shotsPipelineConfigured || !hasScript || dirty || sendingShots}
+            onClick={() => (hasShots ? setConfirmShots(true) : void sendShots())}
+            title={
+              !shotsPipelineConfigured
+                ? 'Не задан VITE_N8N_SHOTS_WEBHOOK'
+                : !hasScript
+                  ? 'Сначала нужен сценарий'
+                  : dirty
+                    ? 'Сначала сохраните — n8n берёт данные из БД'
+                    : 'n8n отдаст сценарий Редактору и запишет шоты'
+            }
+          >
+            <Wand2 /> {sendingShots ? 'Отправка…' : hasShots ? 'Перегенерировать шоты' : 'Сгенерировать шоты'}
           </Button>
           {links.map(({ to, label, icon: Icon }) => (
             <Link key={to} to={to} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-fg-2 hover:bg-hover hover:text-fg">
@@ -340,6 +371,13 @@ function EpisodeBody({ topic, onClose }: { topic: Topic; onClose: () => void }) 
         title="Перегенерировать сценарий?"
         description="n8n перезапишет текущий сценарий серии (script_scenas)."
         onConfirm={sendScript}
+      />
+      <ConfirmDialog
+        open={confirmShots}
+        onOpenChange={setConfirmShots}
+        title="Перегенерировать шоты?"
+        description="n8n перезапишет текущие шоты серии (script_shots)."
+        onConfirm={sendShots}
       />
     </>
   )

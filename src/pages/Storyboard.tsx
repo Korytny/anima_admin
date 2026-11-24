@@ -7,8 +7,8 @@ import { sceneCast, seasonCharacters, useData, useScenesByTopic } from '@/store/
 import { CastChips } from '@/components/CastChips'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { mediaUrl, sceneCode } from '@/lib/media'
-import { cn, storageGet } from '@/lib/utils'
-import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
+import { cn } from '@/lib/utils'
+import { LAST_TOPIC_KEY, TopicSelect, useLastTopic } from '@/components/TopicSelect'
 import { Button, ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
@@ -16,8 +16,8 @@ type Show = 'all' | 'missing' | 'manual'
 
 export function StoryboardPage() {
   const { topicId } = useParams()
+  const last = useLastTopic()
   if (!topicId) {
-    const last = storageGet<string | null>(LAST_TOPIC_KEY, null)
     if (last) return <Navigate to={`/storyboard/${last}`} replace />
     return <EmptyState icon={<LayoutGrid />} title="Выберите ролик" action={<TopicSelect value="" base="/storyboard" className="w-72" />} />
   }

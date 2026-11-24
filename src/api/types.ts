@@ -1,4 +1,4 @@
-import type { Agent, AgentPromptVersion, ProcessSettings, Task, TaskComment, TeamMember, Season, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
+import type { Agent, AgentPromptVersion, LlmProviderRow, ProcessSettings, Task, TaskComment, TeamMember, Season, Character, Integration, IntegrationId, Scene, SystemSettings, Topic, User } from '@/types'
 
 /**
  * Контракт слоя данных. UI работает только через него.
@@ -47,6 +47,10 @@ export interface Api {
   inviteUser(email: string, role: User['role']): Promise<User>
   updateUser(id: string, patch: Partial<User>): Promise<User>
   deleteUser(id: string): Promise<void>
+
+  listLlmProviders(): Promise<LlmProviderRow[]>
+  saveLlmProvider(row: Partial<LlmProviderRow> & { id: string }): Promise<LlmProviderRow>
+  deleteLlmProvider(id: string): Promise<void>
 
   listIntegrations(): Promise<Integration[]>
   updateIntegration(id: IntegrationId, patch: { config?: Record<string, string>; secret?: string }): Promise<Integration>

@@ -7,9 +7,8 @@ import { useData, useScenesByTopic } from '@/store/data'
 import { audioConfigured } from '@/api/pipeline'
 import { mediaUrl } from '@/lib/media'
 import { isTalkLine, needsAudio } from '@/lib/status'
-import { storageGet } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
-import { LAST_TOPIC_KEY, TopicSelect } from '@/components/TopicSelect'
+import { LAST_TOPIC_KEY, TopicSelect, useLastTopic } from '@/components/TopicSelect'
 import { Button, ConfirmDialog, EmptyState } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
@@ -17,8 +16,8 @@ import { SceneCard } from './SceneCard'
  *  по выбору, кнопкой в строке: с озвучкой видео подстроит губы под неё, без — голос сделает видео. Результат — audio_file / audio_duration. */
 export function VoicePage() {
   const { topicId } = useParams()
+  const last = useLastTopic()
   if (!topicId) {
-    const last = storageGet<string | null>(LAST_TOPIC_KEY, null)
     if (last) return <Navigate to={`/voice/${last}`} replace />
     return <EmptyState icon={<Mic />} title="Выберите ролик" action={<TopicSelect value="" base="/voice" className="w-72" />} />
   }

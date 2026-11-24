@@ -13,6 +13,7 @@ import {
   Loader2,
   Mail,
   Palette,
+  Plus,
   Plug,
   Server,
   Shield,
@@ -31,12 +32,12 @@ import { ComputePage } from '@/pages/Compute'
 import { DiagnosticsPage } from '@/pages/Diagnostics'
 import { toast } from 'sonner'
 import { api } from '@/api'
-import type { Integration, SystemSettings, User, UserRole } from '@/types'
+import type { Integration, LlmProviderRow, SystemSettings, User, UserRole } from '@/types'
 import { useData } from '@/store/data'
 import { ROLES, toOptions } from '@/lib/status'
 import { cn, fmtDateTime, timeAgo } from '@/lib/utils'
 import { exportUiSettings } from '@/lib/uiSettings'
-import { Avatar, Button, ConfirmDialog, Input, Modal, Select, Skeleton } from '@/components/ui'
+import { Avatar, Button, ConfirmDialog, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
 
 /** Разделы настроек. page — полноценная страница (свой макет на всю ширину); demo — данные не сохраняются (нет таблиц). */
 export const SECTIONS = [
@@ -47,7 +48,7 @@ export const SECTIONS = [
   { id: 'diagnostics', label: 'Диагностика', icon: Stethoscope, page: DiagnosticsPage, demo: false },
   { id: 'interface', label: 'Интерфейс', icon: LayoutTemplate, page: null, demo: false },
   { id: 'access', label: 'Права доступа', icon: Shield, page: null, demo: true },
-  { id: 'integrations', label: 'Интеграции', icon: Plug, page: null, demo: true },
+  { id: 'integrations', label: 'Интеграции', icon: Plug, page: null, demo: false },
   { id: 'system', label: 'Системные', icon: SlidersHorizontal, page: null, demo: true },
 ] as const
 
@@ -283,7 +284,8 @@ function IntegrationsSection() {
 
   return (
     <>
-      <SectionTitle title="Интеграции" description="Ключи хранятся только на сервере; здесь видны лишь последние 4 символа." />
+      <SectionTitle title="Интеграции" description="Модели для агентов — настоящие (таблица llm_providers, читает n8n). Вычисления и хранилища ниже — демо." />
+      <LlmProvidersSection />
       {!items && <Skeleton className="h-40 rounded-xl" />}
       {items &&
         (Object.keys(KIND) as Integration['kind'][]).map((kind) => {
@@ -293,7 +295,7 @@ function IntegrationsSection() {
           return (
             <section key={kind} className="mb-8">
               <h2 className="mb-3 flex items-center gap-2 font-semibold">
-                <K.icon className="size-4 text-fg-3" /> {K.title}
+                <K.icon className="size-4 text-fg-3" /> {K.title} <span className="text-xs font-normal text-fg-3">демо</span>
               </h2>
               <div className="grid gap-3 lg:grid-cols-2">
                 {list.map((it) => (
@@ -304,6 +306,148 @@ function IntegrationsSection() {
           )
         })}
     </>
+  )
+}
+
+/** Провайдеры моделей (llm_providers): OpenAI-совместимый адрес, ключ, список моделей. n8n берёт их по agents.provider. */
+function LlmProvidersSection() {
+  const [items, setItems] = useState<LlmProviderRow[] | null>(null)
+  const [newId, setNewId] = useState('')
+  const load = () =>
+    api
+      .listLlmProviders()
+      .then(setItems)
+      .catch((e) => (setItems([]), toast.error('Не удалось загрузить провайдеров', { description: e instanceof Error ? e.message : String(e) })))
+  useEffect(() => {
+    void load()
+  }, [])
+  const add = async () => {
+    const id = newId.trim().toLowerCase()
+    if (!id) return
+    if (items?.some((p) => p.id === id)) return toast.error(`Провайдер «${id}» уже есть`)
+    try {
+      const row = await api.saveLlmProvider({ id, title: newId.trim() })
+      setItems((x) => [...(x ?? []), row])
+      setNewId('')
+    } catch (e) {
+      toast.error('Не удалось добавить', { description: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return (
+    <section className="mb-8">
+      <h2 className="mb-3 flex items-center gap-2 font-semibold">
+        <Sparkles className="size-4 text-fg-3" /> Модели (LLM)
+      </h2>
+      {!items && <Skeleton className="h-40 rounded-xl" />}
+      {items && (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {items.map((p) => (
+            <LlmProviderCard
+              key={p.id}
+              item={p}
+              onSaved={(row) => setItems((x) => x?.map((y) => (y.id === row.id ? row : y)) ?? null)}
+              onDeleted={() => setItems((x) => x?.filter((y) => y.id !== p.id) ?? null)}
+            />
+          ))}
+          <Card className="flex items-center gap-2 p-4">
+            <Input className="font-mono text-xs" placeholder="id нового провайдера (openai, openrouter…)" value={newId} onChange={(e) => setNewId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void add()} />
+            <Button variant="outline" disabled={!newId.trim()} onClick={add}>
+              <Plus /> Добавить
+            </Button>
+          </Card>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function LlmProviderCard({ item, onSaved, onDeleted }: { item: LlmProviderRow; onSaved: (r: LlmProviderRow) => void; onDeleted: () => void }) {
+  const init = { title: item.title ?? '', base_url: item.base_url ?? '', api_key: item.api_key ?? '', models: item.models.join('\n') }
+  const [form, setForm] = useState(init)
+  const [saving, setSaving] = useState(false)
+  const [confirm, setConfirm] = useState(false)
+  const dirty = JSON.stringify(form) !== JSON.stringify(init)
+  const set = (k: keyof typeof init) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const { agents } = useData()
+  const used = agents.filter((a) => a.provider === item.id)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const row = await api.saveLlmProvider({
+        id: item.id,
+        title: form.title.trim() || null,
+        base_url: form.base_url.trim().replace(/\/+$/, '') || null,
+        api_key: form.api_key.trim() || null,
+        models: [...new Set(form.models.split('\n').map((m) => m.trim()).filter(Boolean))],
+      })
+      onSaved(row)
+      setForm({ title: row.title ?? '', base_url: row.base_url ?? '', api_key: row.api_key ?? '', models: row.models.join('\n') })
+      toast.success(`${row.title || row.id}: сохранено`)
+    } catch (e) {
+      toast.error('Не удалось сохранить', { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-2">
+        <span className="font-semibold">{item.title || item.id}</span>
+        <span className="font-mono text-[11px] text-fg-3">{item.id}</span>
+        <span className="ml-auto text-[11px] text-fg-3">{item.updated_at ? `изменён ${timeAgo(item.updated_at)}` : ''}</span>
+      </div>
+      <div className="mt-0.5 text-[11px] text-fg-3">
+        {used.length ? `агенты: ${used.map((a) => a.name || `#${a.id}`).join(', ')}` : 'агентов пока нет'}
+      </div>
+      <div className="mt-4 space-y-3">
+        <label className="block space-y-1">
+          <span className="text-xs text-fg-2">Название</span>
+          <Input value={form.title} onChange={set('title')} />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-fg-2">Адрес API (OpenAI-совместимый, без /chat/completions)</span>
+          <Input className="font-mono text-xs" placeholder="https://…/v1" value={form.base_url} onChange={set('base_url')} />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-fg-2">API-ключ</span>
+          <Input className="font-mono text-xs" autoComplete="off" value={form.api_key} onChange={set('api_key')} />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-fg-2">Модели — по одной в строке, как их ждёт API</span>
+          <Textarea className="font-mono text-xs" rows={5} value={form.models} onChange={set('models')} />
+        </label>
+      </div>
+      <div className="mt-4 flex gap-2">
+        <Button variant="primary" disabled={!dirty || saving} onClick={save}>
+          {saving ? <Loader2 className="animate-spin" /> : null} Сохранить
+        </Button>
+        {dirty && (
+          <Button variant="ghost" onClick={() => setForm(init)}>
+            Отменить
+          </Button>
+        )}
+        <Button variant="ghost" className="ml-auto" aria-label="Удалить провайдера" onClick={() => setConfirm(true)}>
+          <Trash2 />
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={confirm}
+        onOpenChange={setConfirm}
+        title={`Удалить провайдера «${item.title || item.id}»?`}
+        description={used.length ? `Его используют агенты: ${used.map((a) => a.name || `#${a.id}`).join(', ')}. У них останется ссылка на несуществующего провайдера.` : 'Ключ и список моделей удалятся.'}
+        confirmLabel="Удалить"
+        onConfirm={async () => {
+          try {
+            await api.deleteLlmProvider(item.id)
+            onDeleted()
+          } catch (e) {
+            toast.error('Не удалось удалить', { description: e instanceof Error ? e.message : String(e) })
+          }
+        }}
+      />
+    </Card>
   )
 }
 
