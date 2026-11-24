@@ -11,9 +11,11 @@ import { VideoPlayer } from '@/components/VideoPlayer'
 import { Button, ConfirmDialog, EmptyState, SegmentedControl } from '@/components/ui'
 import { SceneCard } from './SceneCard'
 
-/** Длительность шота на таймлайне: по озвучке, без неё — scenes.time (так же считает n8n). */
+/** Длина шота: есть видео — длина файла (H3 делает 5 + 17k кадров, обычно чуть длиннее озвучки: голос идёт с начала
+ *  шота, хвост — интершумы видео); пока не известна / видео нет — озвучка, «Сек», 3 с. */
 const DEFAULT_SEC = 3
-const clipSec = (s: Scene) => s.audio_duration || s.time || DEFAULT_SEC
+const fallbackSec = (s: Scene) => s.audio_duration || s.time || DEFAULT_SEC
+const MUSIC_VOLUME = 0.3 // музыка под голосом и интершумами
 const SCALES = [16, 32, 64, 128] // px на секунду
 type Mode = 'draft' | 'final'
 
@@ -46,18 +48,21 @@ function Montage({ topicId }: { topicId: string }) {
     localStorage.setItem('montage:scale', JSON.stringify(scale))
   }, [scale])
 
-  // Начало каждого шота на общей шкале
-  const { starts, total } = useMemo(() => {
+  // Начало и длина каждого шота на общей шкале
+  const videoSec = useVideoDurations(shots)
+  const { lens, starts, total } = useMemo(() => {
+    const lens = shots.map((s) => videoSec[mediaUrl(s.video_file) ?? ''] || fallbackSec(s))
     const starts: number[] = []
     let acc = 0
-    for (const s of shots) {
+    for (const l of lens) {
       starts.push(acc)
-      acc += clipSec(s)
+      acc += l
     }
-    return { starts, total: acc }
-  }, [shots])
+    return { lens, starts, total: acc }
+  }, [shots, videoSec])
+  const music = useMemo(() => musicBlocks(shots, starts, lens), [shots, starts, lens])
 
-  const player = useDraftPlayer(shots, starts)
+  const player = useDraftPlayer(shots, starts, lens, music)
   const montaging = isRunning('montage', topicId)
   const withVideo = shots.filter((s) => s.video_file).length
 
@@ -150,6 +155,8 @@ function Montage({ topicId }: { topicId: string }) {
             <Timeline
               shots={shots}
               starts={starts}
+              lens={lens}
+              music={music}
               total={total}
               scale={scale}
               setScale={setScale}
@@ -190,18 +197,73 @@ function Montage({ topicId }: { topicId: string }) {
   )
 }
 
-/** Черновой просмотр: видео шотов подряд; шот без видео показывается кадром на его длительность. */
-function useDraftPlayer(shots: Scene[], starts: number[]) {
+/** Длительности видео шотов из метаданных файлов (url → секунды). */
+function useVideoDurations(shots: Scene[]) {
+  const [sec, setSec] = useState<Record<string, number>>({})
+  const urls = [...new Set(shots.map((s) => mediaUrl(s.video_file)).filter((u): u is string => !!u))].join('\n')
+  useEffect(() => {
+    const els = urls
+      .split('\n')
+      .filter((u) => u && !(u in sec))
+      .map((u) => {
+        const v = document.createElement('video')
+        v.preload = 'metadata'
+        v.onloadedmetadata = () => Number.isFinite(v.duration) && setSec((m) => ({ ...m, [u]: v.duration }))
+        v.src = u
+        return v
+      })
+    return () => els.forEach((v) => v.removeAttribute('src'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urls])
+  return sec
+}
+
+type MusicBlock = { key: string; start: number; len: number; label: string; set: boolean; file: string | null }
+
+/** Музыка: подряд идущие шоты с одной музыкой (или локацией) — один блок. */
+function musicBlocks(shots: Scene[], starts: number[], lens: number[]) {
+  const blocks: MusicBlock[] = []
+  shots.forEach((s, k) => {
+    const set = !!(s.music?.trim() || s.music_file)
+    const key = s.music?.trim() || s.music_file || `loc:${s.location_num ?? s.location_desc ?? ''}`
+    const last = blocks[blocks.length - 1]
+    if (last?.key === key) {
+      last.len += lens[k]
+      last.file ||= s.music_file
+    } else
+      blocks.push({
+        key,
+        start: starts[k],
+        len: lens[k],
+        set,
+        file: s.music_file,
+        label: s.music?.trim() || s.location_desc || (s.location_num != null ? `локация ${s.location_num}` : '—'),
+      })
+  })
+  return blocks
+}
+
+/** Черновой просмотр: видео шотов подряд + голос шота (audio_file, с начала шота) + музыка блока (music_file, тише).
+ *  Шот без видео показывается кадром на свою длительность, голос и музыка при этом звучат. */
+function useDraftPlayer(shots: Scene[], starts: number[], lens: number[], music: MusicBlock[]) {
   const [idx, setIdx] = useState(0)
   const [local, setLocal] = useState(0) // секунды внутри текущего шота
   const [playing, setPlaying] = useState(false)
+  const [sync, setSync] = useState(0) // растёт при смене шота/перемотке: голос и музыку выставить заново
   const video = useRef<HTMLVideoElement>(null)
+  const voice = useRef<HTMLAudioElement>(null)
+  const bgm = useRef<HTMLAudioElement>(null)
   const pendingSeek = useRef(0)
 
   const i = Math.min(idx, Math.max(0, shots.length - 1))
   const shot = shots[i] as Scene | undefined
   const src = mediaUrl(shot?.video_file)
-  const dur = shot ? clipSec(shot) : 0
+  const dur = lens[i] ?? 0
+  const now = (starts[i] ?? 0) + local
+  const block = music.find((b) => now >= b.start && now < b.start + b.len) ?? null
+  const voiceSrc = mediaUrl(shot?.audio_file)
+  const musicSrc = mediaUrl(block?.file)
+  const musicOffset = block ? now - block.start : 0
 
   const go = (n: number, at = 0) => {
     if (n >= shots.length) {
@@ -211,8 +273,29 @@ function useDraftPlayer(shots: Scene[], starts: number[]) {
     pendingSeek.current = at
     setIdx(Math.max(0, n))
     setLocal(at)
+    setSync((x) => x + 1)
     if (n === i && video.current) video.current.currentTime = at
   }
+
+  // Голос и музыка: при смене шота, перемотке и старте — на нужное место; пауза — пауза
+  const at = useRef({ local, musicOffset })
+  at.current = { local, musicOffset }
+  useEffect(() => {
+    for (const [el, offset] of [
+      [voice.current, at.current.local],
+      [bgm.current, at.current.musicOffset],
+    ] as const) {
+      if (!el) continue
+      if (!playing) {
+        el.pause()
+        continue
+      }
+      if (Number.isFinite(el.duration) && offset >= el.duration) continue // голос шота уже закончился
+      // Музыка на стыке шотов идёт дальше — переставляем, только если разошлась (перемотка)
+      if (el !== bgm.current || Math.abs(el.currentTime - offset) > 0.3) el.currentTime = offset
+      void el.play().catch(() => {})
+    }
+  }, [playing, sync, voiceSrc, musicSrc])
 
   // Видео: play/pause по состоянию
   useEffect(() => {
@@ -245,6 +328,13 @@ function useDraftPlayer(shots: Scene[], starts: number[]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, src, i, dur])
 
+  const sound = (
+    <>
+      {voiceSrc && <audio key={voiceSrc} ref={voice} src={voiceSrc} preload="auto" />}
+      {musicSrc && <audio key={musicSrc} ref={bgm} src={musicSrc} preload="auto" onLoadedMetadata={(e) => (e.currentTarget.volume = MUSIC_VOLUME)} />}
+    </>
+  )
+
   const screen = shot ? (
     src ? (
       <video
@@ -273,8 +363,13 @@ function useDraftPlayer(shots: Scene[], starts: number[]) {
   return {
     idx: i,
     playing,
-    time: (starts[i] ?? 0) + local,
-    screen,
+    time: now,
+    screen: (
+      <>
+        {screen}
+        {sound}
+      </>
+    ),
     toggle: () => {
       if (!playing && i === shots.length - 1 && local >= dur - 0.05) go(0)
       setPlaying((p) => !p)
@@ -310,6 +405,8 @@ function NowPlaying({ scene }: { scene?: Scene }) {
 function Timeline({
   shots,
   starts,
+  lens,
+  music,
   total,
   scale,
   setScale,
@@ -321,6 +418,8 @@ function Timeline({
 }: {
   shots: Scene[]
   starts: number[]
+  lens: number[]
+  music: MusicBlock[]
   total: number
   scale: number
   setScale: (n: number) => void
@@ -339,32 +438,6 @@ function Timeline({
     if (!el || !playing) return
     el.scrollLeft = time * scale - (el.clientWidth - LABEL) / 2
   }, [time, scale, playing])
-
-  // Музыка: подряд идущие шоты с одной музыкой (или локацией) — один блок
-  const music = useMemo(() => {
-    const blocks: {
-      key: string
-      start: number
-      len: number
-      label: string
-      set: boolean
-    }[] = []
-    shots.forEach((s, k) => {
-      const set = !!(s.music?.trim() || s.music_file)
-      const key = s.music?.trim() || s.music_file || `loc:${s.location_num ?? s.location_desc ?? ''}`
-      const last = blocks[blocks.length - 1]
-      if (last?.key === key) last.len += clipSec(s)
-      else
-        blocks.push({
-          key,
-          start: starts[k],
-          len: clipSec(s),
-          set,
-          label: s.music?.trim() || s.location_desc || (s.location_num != null ? `локация ${s.location_num}` : '—'),
-        })
-    })
-    return blocks
-  }, [shots, starts])
 
   const ticks = useMemo(() => {
     const step = scale >= 64 ? 1 : scale >= 32 ? 5 : 10
@@ -423,7 +496,7 @@ function Timeline({
                     key={s.scene_id}
                     onClick={() => onSeek(starts[k])}
                     onDoubleClick={() => onOpen(s.scene_id)}
-                    title={`${sceneCode(s)} · ${fmtDuration(clipSec(s))}${s.video_file ? '' : ' · нет видео'}`}
+                    title={`${sceneCode(s)} · ${fmtDuration(lens[k])}${s.video_file ? '' : ' · нет видео'}`}
                     className={cn(
                       'absolute top-1 bottom-1 overflow-hidden rounded border bg-raised bg-cover bg-center text-left',
                       k === current ? 'border-accent ring-1 ring-accent' : 'border-border',
@@ -431,7 +504,7 @@ function Timeline({
                     )}
                     style={{
                       left: starts[k] * scale + 1,
-                      width: Math.max(4, clipSec(s) * scale - 2),
+                      width: Math.max(4, lens[k] * scale - 2),
                       backgroundImage: img ? `url("${img}")` : undefined,
                     }}
                   >
@@ -453,7 +526,7 @@ function Timeline({
                     className={cn('absolute top-1 bottom-1 truncate rounded px-1 text-[10px] leading-4', s.audio_file ? 'bg-accent/30 text-fg' : 'border border-dashed border-gold/60 text-gold')}
                     style={{
                       left: starts[k] * scale + 1,
-                      width: Math.max(4, (s.audio_duration || clipSec(s)) * scale - 2),
+                      width: Math.max(4, Math.min(lens[k], s.audio_duration || lens[k]) * scale - 2),
                     }}
                   >
                     {s.audio_file ? s.speaking_character : 'не озвучено'}
