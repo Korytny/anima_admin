@@ -1,50 +1,85 @@
+// Карточка ролика (серии) — одна на «Контент-план» и «Сезоны». Поля настраиваются как у сцены (useCardLayout):
+// группы из кода — по умолчанию, остальные колонки topics — в «Остальном», любое поле переносится кнопкой.
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Copy, ExternalLink, Loader2, Scissors, Theater, Trash2 } from 'lucide-react'
-import type { Season, Topic } from '@/types'
-import { scenePreview, seasonTitle, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
+import { Link, useNavigate } from 'react-router-dom'
+import { Copy, ExternalLink, LayoutGrid, ListVideo, Loader2, Rows3, ScrollText, Sparkles, Theater, Trash2, Wand2 } from 'lucide-react'
+import { toast } from 'sonner'
+import type { Character, Season, Topic } from '@/types'
+import { characterImages, scenePreview, seasonCharacters, seasonTitle, topicPreview, topicTitle, useData, useScenesByTopic } from '@/store/data'
 import { TOPIC_STATUS, statusMeta, statusOptions } from '@/lib/status'
 import { SceneStageBadge } from '@/components/SceneStageBadge'
 import { useDraft } from '@/lib/useDraft'
-import { copyText, fmtBytes, fmtDateTime, fmtDuration, timeAgo } from '@/lib/utils'
+import { useCardLayout } from '@/lib/useCardLayout'
+import { cn, copyText, fmtBytes, fmtDateTime, fmtDuration, timeAgo } from '@/lib/utils'
 import { mediaUrl } from '@/lib/media'
-import { montageConfigured } from '@/api/pipeline'
+import { promptsPipelineConfigured, requestEpisodePrompts, requestEpisodeScenes, requestEpisodeScript, requestEpisodeShots, scenesPipelineConfigured, scriptPipelineConfigured, shotsPipelineConfigured } from '@/api/pipeline'
 import { PanelFooter, PanelScroll, SidePanel } from '@/components/SidePanel'
 import { FieldGroups, type GroupDef } from '@/components/FieldGroups'
 import { VideoPlayer } from '@/components/VideoPlayer'
-import { Button, Kbd, StatusBadge, Tabs, Thumb } from '@/components/ui'
+import { Button, ConfirmDialog, Kbd, StatusBadge, Tabs, Thumb } from '@/components/ui'
+import { AGENT_STEPS, activeStepAgent, type AgentStep } from '@/lib/agentSteps'
 
-/** Основные поля — сразу под медиа, без группы. */
-function mainGroup(status: string | null): GroupDef<Topic> {
-  return {
-    title: 'Основные',
-    flat: true,
-    fields: [
-      { key: 'title', type: 'textarea', rows: 2, required: true },
-      { key: 'status', type: 'select', options: statusOptions(TOPIC_STATUS, [status]).map((o) => ({ ...o, label: `${o.label} (${o.value})` })) },
-      { key: 'backlog', type: 'number', mono: true },
-      { key: 'duration', label: 'duration, сек', type: 'number', mono: true },
-      { key: 'visual_style' },
-    ],
+const ep = (n: number | null) => (n == null ? null : String(n).padStart(2, '0'))
+
+/** Персонажи серии — выбор из библиотеки сезона (клик добавляет/убирает имя в topics.chars). */
+function CastPicker({ value, onChange, pool }: { value: unknown; onChange: (v: unknown) => void; pool: Character[] }) {
+  const chosen = new Set(((value as string[] | null) ?? []).map((n) => n.trim().toLowerCase()))
+  if (!pool.length) return <p className="mt-1 text-[11px] text-fg-3">В библиотеке сезона пока нет персонажей — заведите их в разделе «Персонажи».</p>
+  const toggle = (name: string) => {
+    const cur = (value as string[] | null) ?? []
+    const k = name.trim().toLowerCase()
+    const next = chosen.has(k) ? cur.filter((n) => n.trim().toLowerCase() !== k) : [...cur, name]
+    onChange(next.length ? next : null)
   }
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {pool.map((c) => {
+        const name = c.name ?? ''
+        const on = chosen.has(name.trim().toLowerCase())
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => toggle(name)}
+            className={cn('flex items-center gap-1 rounded-md border py-0.5 pr-2 pl-0.5 text-xs', on ? 'border-accent bg-accent/15 text-fg' : 'border-border text-fg-3 hover:text-fg')}
+          >
+            <Thumb src={characterImages(c)[0]} className="size-5" />
+            {name || '—'}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
-function groups(seasons: Season[]): GroupDef<Topic>[] {
+/** Группы по умолчанию. Всё, что сюда не вошло, useCardLayout кладёт в «Остальное». */
+function groups(seasons: Season[], status: string | null, pool: Character[]): GroupDef<Topic>[] {
   return [
     {
-      title: 'Контент',
-      defaultOpen: false,
+      title: 'Серия',
       fields: [
-        { key: 'season_id', label: 'сезон', type: 'select', required: true, options: seasons.map((s) => ({ value: s.id, label: seasonTitle(s) })) },
-        { key: 'logline', label: 'логлайн', type: 'textarea', rows: 3 },
-        { key: 'beats', label: 'биты', type: 'list', rows: 8 },
-        { key: 'script_scenas', label: 'script_scenas — сценарий', type: 'textarea', rows: 8 },
-        { key: 'script_shots', label: 'script_shots — шоты', type: 'textarea', rows: 8, mono: true },
+        { key: 'title', type: 'textarea', rows: 2, required: true },
+        { key: 'season_id', label: 'сезон — сменить, чтобы перенести серию', type: 'select', required: true, options: seasons.map((s) => ({ value: s.id, label: seasonTitle(s) })) },
+        { key: 'backlog', label: 'номер серии', type: 'number', mono: true },
+        { key: 'duration', label: 'длительность, сек', type: 'number', mono: true },
+        { key: 'status', type: 'select', options: statusOptions(TOPIC_STATUS, [status]).map((o) => ({ ...o, label: `${o.label} (${o.value})` })) },
+        { key: 'logline', label: 'логлайн: кто чего хочет, что мешает, чем платит', type: 'textarea', rows: 3 },
+        { key: 'chars', label: 'персонажи серии — выберите из библиотеки сезона', type: 'list', rows: 3, mono: true, extra: (v, set) => <CastPicker value={v} onChange={set} pool={pool} /> },
       ],
     },
+    { title: 'Биты', fields: [{ key: 'beats', label: 'по одному на строку, связи: «проклятие (→10)»', type: 'list', rows: 10 }] },
     {
-      title: 'Персонажи',
-      fields: [{ key: 'chars', type: 'list', rows: 3 }],
+      title: 'Первоисточник',
+      defaultOpen: false,
+      fields: [{ key: 'source_excerpt', label: 'выжимка глав: события, детали, каноничные реплики', type: 'textarea', rows: 14 }],
+    },
+    {
+      title: 'Сценарий',
+      defaultOpen: false,
+      fields: [
+        { key: 'script_scenas', label: 'script_scenas — сценарий', type: 'textarea', rows: 10 },
+        { key: 'script_shots', label: 'script_shots — шоты', type: 'textarea', rows: 10, mono: true },
+      ],
     },
     {
       title: 'Медиа',
@@ -86,7 +121,10 @@ export function TopicCard({ topic, onClose, onDelete }: { topic: Topic | null; o
               </button>
               <StatusBadge meta={statusMeta(TOPIC_STATUS, topic.status)} />
             </div>
-            <h2 className="mt-1 line-clamp-2 text-base font-semibold">{topicTitle(topic)}</h2>
+            <h2 className="mt-1 line-clamp-2 text-base font-semibold">
+              {ep(topic.backlog) && <span className="mr-1.5 font-mono text-fg-3">{ep(topic.backlog)}</span>}
+              {topicTitle(topic)}
+            </h2>
           </div>
         )
       }
@@ -96,19 +134,77 @@ export function TopicCard({ topic, onClose, onDelete }: { topic: Topic | null; o
   )
 }
 
+/** Кнопка запуска шага в n8n. У шага с агентом (step) — активный агент шага («Настройки → Агенты»), в вебхук уходит его id.
+ *  При готовом результате — подтверждение перезаписи (confirmText — свой текст). */
+function StepButton({ id, step, label, field, configured, envName, blocked, done, confirmText, icon: Icon = Wand2, request }: {
+  id: string
+  step?: AgentStep
+  label: string
+  field: string
+  configured: boolean
+  envName: string
+  blocked: string | null
+  done: boolean
+  confirmText?: string
+  icon?: typeof Wand2
+  request: (id: string, agentId: number | null) => Promise<void>
+}) {
+  const { agents } = useData()
+  const agent = step ? activeStepAgent(agents, step) : null
+  const [confirm, setConfirm] = useState(false)
+  const [sending, setSending] = useState(false)
+  const send = async () => {
+    setSending(true)
+    try {
+      await request(id, agent?.id ?? null)
+      toast.success('Отправлено в n8n', { description: `${label}${agent ? ` (${agent.name ?? `#${agent.id}`})` : ''}: результат появится, когда n8n запишет его в ${field}.` })
+    } catch (e) {
+      toast.error('Не удалось запустить', { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setSending(false)
+    }
+  }
+  const stepLabel = step ? (AGENT_STEPS.find((x) => x.value === step)?.label ?? step) : ''
+  const why = !configured ? `Не задан ${envName}` : step && !agent ? `Нет активного агента шага «${stepLabel}» — включите его в «Настройки → Агенты»` : blocked
+  const title = why ?? `${done ? 'Перезапустить' : 'Запустить'}: ${label}${agent ? ` — ${agent.name ?? `агент #${agent.id}`}` : ''}`
+  return (
+    <>
+      <Button variant="outline" disabled={!!why || sending} title={title} onClick={() => (done ? setConfirm(true) : void send())}>
+        {sending ? <Loader2 className="animate-spin" /> : <Icon />} {label}
+      </Button>
+      <ConfirmDialog
+        open={confirm}
+        onOpenChange={setConfirm}
+        title={`Перезапустить: ${label.toLowerCase()}?`}
+        description={confirmText ?? `n8n перезапишет текущий результат (${field}). Агент: ${agent?.name ?? '—'}.`}
+        confirmLabel="Перезапустить"
+        onConfirm={send}
+      />
+    </>
+  )
+}
+
 function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => void }) {
   const navigate = useNavigate()
-  const { updateTopic, seasons, runJobs, isRunning } = useData()
-  const montaging = isRunning('montage', topic.topic_id)
+  const { updateTopic, seasons, characters } = useData()
   const scenes = useScenesByTopic().get(topic.topic_id) ?? []
   const { draft, set, reset, submit, dirty, dirtyKeys, saving } = useDraft(topic, 'topic_id', (patch) => updateTopic(topic.topic_id, patch))
   const [tab, setTab] = useState<Tab>('details')
-  const fieldGroups = useMemo(() => groups(seasons), [seasons])
-  const main = useMemo(() => [mainGroup(topic.status)], [topic.status])
+  const pool = useMemo(() => seasonCharacters(topic.season_id, characters), [topic.season_id, characters])
+  const codeGroups = useMemo(() => groups(seasons, topic.status, pool), [seasons, topic.status, pool])
+  const layout = useCardLayout('card:topic', codeGroups, draft)
   const video = topic.url_final || topic.file_tiktok
   const preview = topicPreview(scenes)
 
   if (!draft) return null
+  const id = topic.topic_id
+  const hasScript = !!topic.script_scenas?.trim()
+  const links = [
+    { to: `/script/${id}`, label: 'Сценарий', icon: ScrollText },
+    { to: `/script/${id}?view=shots`, label: 'Шоты', icon: ListVideo },
+    { to: `/scenes/${id}`, label: 'Сцены', icon: Theater },
+    { to: `/storyboard/${id}`, label: 'Раскадровка', icon: LayoutGrid },
+  ]
 
   return (
     <>
@@ -116,12 +212,18 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
         {(video || preview) && (
           <div className="px-4 pt-4">{video ? <VideoPlayer src={video} poster={preview} /> : <Thumb src={preview} className="aspect-video w-full rounded-lg" />}</div>
         )}
-        <FieldGroups groups={main} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />
-        <div className="space-y-2 px-4 pb-4">
+        <div className="space-y-2 px-4 pt-3 pb-3">
+          <div className="flex flex-wrap gap-1.5">
+            {links.map(({ to, label, icon: Icon }) => (
+              <Link key={to} to={to} className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-fg-2 hover:bg-hover hover:text-fg">
+                <Icon className="size-3.5" /> {label}
+              </Link>
+            ))}
+          </div>
           <dl className="grid grid-cols-3 gap-2 pt-1">
             {[
               ['Длительность', fmtDuration(topic.duration)],
-              ['Сцен', String(scenes.length)],
+              ['Шотов', String(scenes.length)],
               ['Обновлён', timeAgo(topic.updated_at)],
             ].map(([k, v]) => (
               <div key={k} className="rounded-md border border-border bg-bg px-2.5 py-1.5">
@@ -152,15 +254,26 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
           className="sticky top-0 z-10 bg-surface"
           tabs={[
             { value: 'details', label: <>Детали{dirty && <span className="size-1.5 rounded-full bg-gold" />}</> },
-            { value: 'scenes', label: `Сцены · ${scenes.length}` },
+            { value: 'scenes', label: `Шоты · ${scenes.length}` },
           ]}
         />
 
-        {tab === 'details' && <FieldGroups groups={fieldGroups} draft={draft} onChange={set} dirtyKeys={dirtyKeys} />}
+        {tab === 'details' && (
+          <>
+            <FieldGroups groups={layout.groups} draft={draft} onChange={set} dirtyKeys={dirtyKeys} fieldAction={layout.fieldAction} />
+            {layout.customized && (
+              <div className="border-t border-border px-4 py-2 text-right">
+                <button className="text-xs text-fg-3 hover:text-accent-hover" onClick={layout.reset}>
+                  Вернуть раскладку полей по умолчанию
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
         {tab === 'scenes' && (
           <div className="p-2">
-            {scenes.length === 0 && <div className="p-6 text-center text-fg-3">Сцен пока нет</div>}
+            {scenes.length === 0 && <div className="p-6 text-center text-fg-3">Шотов пока нет</div>}
             {scenes.map((s) => (
               <button
                 key={s.scene_id}
@@ -192,17 +305,53 @@ function Body({ topic, onDelete }: { topic: Topic; onDelete: (id: string) => voi
           </>
         ) : (
           <>
-            <Button onClick={() => navigate(`/scenes/${topic.topic_id}`)}>
-              <Theater /> Открыть сцены
-            </Button>
-            <Button
-              disabled={montaging || !montageConfigured}
-              title={montageConfigured ? 'Смонтировать ролик в n8n (видео шотов + музыка → url_final)' : 'Не задан VITE_N8N_MONTAGE_WEBHOOK'}
-              onClick={() => void runJobs('montage', [topic.topic_id])}
-            >
-              {montaging ? <Loader2 className="animate-spin" /> : <Scissors />}
-              {montaging ? 'Монтаж…' : topic.url_final ? 'Перемонтировать' : 'Смонтировать'}
-            </Button>
+            <StepButton
+              id={id}
+              step="script"
+              label="Сценарий"
+              field="script_scenas"
+              configured={scriptPipelineConfigured}
+              envName="VITE_N8N_SCRIPT_WEBHOOK"
+              blocked={null}
+              done={hasScript}
+              request={requestEpisodeScript}
+            />
+            <StepButton
+              id={id}
+              step="shots"
+              label="Шоты"
+              field="script_shots"
+              configured={shotsPipelineConfigured}
+              envName="VITE_N8N_SHOTS_WEBHOOK"
+              blocked={hasScript ? null : 'Сначала нужен сценарий'}
+              done={!!topic.script_shots?.trim()}
+              request={requestEpisodeShots}
+            />
+            <StepButton
+              id={id}
+              label="В сцены"
+              field="scenes"
+              icon={Rows3}
+              configured={scenesPipelineConfigured}
+              envName="VITE_N8N_SCENES_WEBHOOK"
+              blocked={topic.script_shots?.trim() ? null : 'Сначала нужны шоты'}
+              done={scenes.length > 0}
+              confirmText={`У серии уже ${scenes.length} шот(ов) в таблице сцен, из них с кадром — ${scenes.filter((x) => x.base_image_url).length}, с видео — ${scenes.filter((x) => x.video_file).length}. n8n разложит шоты заново: существующие строки могут быть перезаписаны.`}
+              request={(tid) => requestEpisodeScenes(tid)}
+            />
+            <StepButton
+              id={id}
+              step="frames"
+              label="Промпты"
+              field="scenes.visual_prompt"
+              icon={Sparkles}
+              configured={promptsPipelineConfigured}
+              envName="VITE_N8N_PROMPTS_WEBHOOK"
+              blocked={scenes.length ? null : 'Сначала разложите шоты в сцены'}
+              done={scenes.some((x) => x.visual_prompt?.trim())}
+              confirmText={`Промпты уже есть у ${scenes.filter((x) => x.visual_prompt?.trim()).length} из ${scenes.length} шотов — Постановщик перепишет авто-промпты (visual_prompt). Ручные правки в manual_prompt не трогаются.`}
+              request={requestEpisodePrompts}
+            />
             <Button variant="ghost" size="icon" title="Скопировать ссылку" aria-label="Скопировать ссылку" onClick={() => copyText(location.href)}>
               <Copy />
             </Button>

@@ -35,12 +35,12 @@ const SCRIPT_WEBHOOK = hook(import.meta.env.VITE_N8N_SCRIPT_WEBHOOK)
 
 export const scriptPipelineConfigured = !!SCRIPT_WEBHOOK
 
-export async function requestEpisodeScript(topicId: string) {
+export async function requestEpisodeScript(topicId: string, agentId: number | null = null) {
   if (!SCRIPT_WEBHOOK) throw new Error('Не задан VITE_N8N_SCRIPT_WEBHOOK в .env.local')
   const res = await fetch(SCRIPT_WEBHOOK, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'episode_script', topic_id: topicId }),
+    body: JSON.stringify({ action: 'episode_script', topic_id: topicId, agent_id: agentId }),
   })
   if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
@@ -49,12 +49,38 @@ export async function requestEpisodeScript(topicId: string) {
 // Редактора из БД и пишет ответ в topics.script_shots.
 const SHOTS_WEBHOOK = hook(import.meta.env.VITE_N8N_SHOTS_WEBHOOK)
 export const shotsPipelineConfigured = !!SHOTS_WEBHOOK
-export async function requestEpisodeShots(topicId: string) {
+export async function requestEpisodeShots(topicId: string, agentId: number | null = null) {
   if (!SHOTS_WEBHOOK) throw new Error('Не задан VITE_N8N_SHOTS_WEBHOOK в .env.local')
   const res = await fetch(SHOTS_WEBHOOK, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'episode_shots', topic_id: topicId }),
+    body: JSON.stringify({ action: 'episode_shots', topic_id: topicId, agent_id: agentId }),
+  })
+  if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}
+
+// Раскладка шотов в таблицу scenes: админка шлёт только topic_id, n8n разбирает topics.script_shots и пишет строки scenes.
+const SCENES_WEBHOOK = hook(import.meta.env.VITE_N8N_SCENES_WEBHOOK)
+export const scenesPipelineConfigured = !!SCENES_WEBHOOK
+export async function requestEpisodeScenes(topicId: string) {
+  if (!SCENES_WEBHOOK) throw new Error('Не задан VITE_N8N_SCENES_WEBHOOK в .env.local')
+  const res = await fetch(SCENES_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'episode_scenes', topic_id: topicId }),
+  })
+  if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
+}
+
+// Промпты кадров (Постановщик): админка шлёт topic_id и активного агента шага «frames»; n8n пишет промпты в строки scenes.
+const PROMPTS_WEBHOOK = hook(import.meta.env.VITE_N8N_PROMPTS_WEBHOOK)
+export const promptsPipelineConfigured = !!PROMPTS_WEBHOOK
+export async function requestEpisodePrompts(topicId: string, agentId: number | null = null) {
+  if (!PROMPTS_WEBHOOK) throw new Error('Не задан VITE_N8N_PROMPTS_WEBHOOK в .env.local')
+  const res = await fetch(PROMPTS_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'episode_prompts', topic_id: topicId, agent_id: agentId }),
   })
   if (!res.ok) throw new Error(`n8n ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
 }
@@ -89,8 +115,10 @@ export const requestLocationMusic = (topicId: string, locationNum: number | null
 /** Все вебхуки конвейера — для страницы настроек и подсказок. Значения id не показываем. */
 export const WEBHOOKS = [
   { step: 'Кадр шота', env: 'VITE_N8N_IMAGE_WEBHOOK', on: !!IMAGE_WEBHOOK, body: "{action:'scene_image', scene_id, topic_id}", writes: 'scenes.base_image_url, char_img_url, status' },
-  { step: 'Сценарий серии', env: 'VITE_N8N_SCRIPT_WEBHOOK', on: !!SCRIPT_WEBHOOK, body: "{action:'episode_script', topic_id}", writes: 'topics.script_scenas' },
-  { step: 'Шоты серии', env: 'VITE_N8N_SHOTS_WEBHOOK', on: !!SHOTS_WEBHOOK, body: "{action:'episode_shots', topic_id}", writes: 'topics.script_shots' },
+  { step: 'Сценарий серии', env: 'VITE_N8N_SCRIPT_WEBHOOK', on: !!SCRIPT_WEBHOOK, body: "{action:'episode_script', topic_id, agent_id}", writes: 'topics.script_scenas' },
+  { step: 'Шоты серии', env: 'VITE_N8N_SHOTS_WEBHOOK', on: !!SHOTS_WEBHOOK, body: "{action:'episode_shots', topic_id, agent_id}", writes: 'topics.script_shots' },
+  { step: 'Шоты → сцены', env: 'VITE_N8N_SCENES_WEBHOOK', on: !!SCENES_WEBHOOK, body: "{action:'episode_scenes', topic_id}", writes: 'scenes (строки шотов серии)' },
+  { step: 'Промпты кадров', env: 'VITE_N8N_PROMPTS_WEBHOOK', on: !!PROMPTS_WEBHOOK, body: "{action:'episode_prompts', topic_id, agent_id}", writes: 'scenes.visual_prompt и др. (Постановщик)' },
   { step: 'Озвучка шота', env: 'VITE_N8N_AUDIO_WEBHOOK', on: !!AUDIO_WEBHOOK, body: "{action:'scene_audio', scene_id}", writes: 'scenes.audio_file, audio_duration' },
   { step: 'Видео шота', env: 'VITE_N8N_VIDEO_WEBHOOK', on: !!VIDEO_WEBHOOK, body: "{action:'scene_video', scene_id}", writes: 'scenes.video_file, video_sub' },
   { step: 'Музыка локации', env: 'VITE_N8N_MUSIC_WEBHOOK', on: !!MUSIC_WEBHOOK, body: "{action:'location_music', topic_id, location_num, scene_ids}", writes: 'scenes.music_file' },

@@ -8,6 +8,7 @@ import { api } from '@/api'
 import { PromptDiff } from '@/components/PromptDiff'
 import { useAssistant } from '@/components/Assistant'
 import { useData } from '@/store/data'
+import { AGENT_STEPS } from '@/lib/agentSteps'
 import { useDraft } from '@/lib/useDraft'
 import { cn, copyText, fmtDateTime, timeAgo } from '@/lib/utils'
 import { DataTable } from '@/components/DataTable'
@@ -18,6 +19,21 @@ import { Avatar, Badge, Button, ConfirmDialog, EmptyState, Input, Kbd, Switch } 
 // public.agents: id (bigint), name, description, prompt (markdown), model, is_active, created_at
 
 const agentName = (a: Agent) => a.name || `Агент #${a.id}`
+
+/** updateAgent с правилом шага: активным на шаге (agents.step) может быть только один агент — его и запускает
+ *  кнопка шага в карточке ролика. Включили агента — остальные агенты того же шага выключаются. */
+function useAgentUpdate() {
+  const { agents, updateAgent } = useData()
+  return useCallback(
+    async (id: number, patch: Partial<Agent>, silent = false) => {
+      const a = await updateAgent(id, patch, silent)
+      if (a?.is_active && a.step)
+        for (const o of agents) if (o.id !== a.id && o.step === a.step && o.is_active) await updateAgent(o.id, { is_active: false }, true)
+      return a
+    },
+    [agents, updateAgent],
+  )
+}
 /** Переменные вида {{var}} в промпте. */
 const promptVars = (p: string | null) => [...new Set([...(p ?? '').matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => m[1]))]
 
@@ -35,9 +51,10 @@ const agentGroups = (providers: LlmProviderRow[], provider: string | null, model
       fields: [
         { key: 'name' },
         { key: 'description', type: 'textarea', rows: 2 },
+        { key: 'step', label: 'шаг конвейера — активного агента шага запускает кнопка шага в карточке ролика', type: 'select', options: [{ value: '', label: '—' }, ...AGENT_STEPS.map((x) => ({ value: x.value, label: x.label }))] },
         { key: 'provider', type: 'select', options: providerOptions },
         models.length ? { key: 'model', type: 'select', options: modelOptions } : { key: 'model', mono: true },
-        { key: 'is_active', type: 'bool' },
+        { key: 'is_active', label: 'активен — на шаге работает только активный агент, остальные агенты шага выключатся', type: 'bool' },
       ],
     },
     ...GROUPS_REST,
@@ -58,7 +75,8 @@ const GROUPS_REST: GroupDef<Agent>[] = [
 
 export function AgentsPage() {
   const [params, setParams] = useSearchParams()
-  const { agents, loading, createAgent, updateAgent, deleteAgents } = useData()
+  const { agents, loading, createAgent, deleteAgents } = useData()
+  const updateAgent = useAgentUpdate()
   const [selection, setSelection] = useState<RowSelectionState>({})
   const [q, setQ] = useState('')
   const [confirm, setConfirm] = useState<number[] | null>(null)
@@ -172,7 +190,7 @@ export function AgentsPage() {
             key={active.id}
             agent={active}
             onDelete={() => setConfirm([active.id])}
-            onDuplicate={() => add({ name: `${agentName(active)} (копия)`, description: active.description, prompt: active.prompt, model: active.model, provider: active.provider })}
+            onDuplicate={() => add({ name: `${agentName(active)} (копия)`, description: active.description, prompt: active.prompt, model: active.model, provider: active.provider, step: active.step })}
           />
         )}
       </SidePanel>
@@ -194,7 +212,7 @@ export function AgentsPage() {
 }
 
 function AgentBody({ agent, onDelete, onDuplicate }: { agent: Agent; onDelete: () => void; onDuplicate: () => void }) {
-  const { updateAgent } = useData()
+  const updateAgent = useAgentUpdate()
   const assistant = useAssistant()
   const [note, setNote] = useState('')
   const [versionsTick, setVersionsTick] = useState(0)

@@ -7,7 +7,8 @@
 //   output_prefix — путь кадра anima/<seasons.folder>/<topics.folder>/<NN>-<шот> (та же схема, что lib/media.ts админки)
 //   style         — добавка стиля сезона (seasons.style)
 //   setting       — мир и эпоха сезона (seasons.setting) → {{setting}} в шаблоне промпта процесса
-//   scene_id, ref_count, workflow_file — для следующих узлов
+//   workflow_file — процесс ComfyUI по стилю сезона (у каждого файла свои настройки в process_settings)
+//   scene_id, ref_count — для следующих узлов
 // Узлы: REFS_NODE (scene_refs.js), SCENE_NODE, TOPIC_NODE, SEASON_NODE (Supabase).
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -16,13 +17,16 @@ const SCENE_NODE = 'Scene'
 const TOPIC_NODE = 'Topic'
 const SEASON_NODE = 'Season'
 
-// Стили сезона (seasons.style → добавка к промпту). Рабочие значения — здесь, в бэкенде;
-// в админке (lib/styles.ts) — названия и превью для выбора.
+// Стили сезона (seasons.style): prompt — добавка к промпту ({{style}}), workflow — файл процесса ComfyUI.
+// Нет workflow — DEFAULT_WORKFLOW. Рабочие значения — здесь, в бэкенде; в админке (lib/styles.ts) — названия и превью.
+const DEFAULT_WORKFLOW = 'frame-refs.json' // один процесс и с персонажами, и без: лишние #ref заполнитель удаляет
 const STYLES = {
-  smooth3d: '3D animated feature film style, smooth stylized shading, soft global illumination, expressive faces',
-  watercolor: 'hand-painted 2D anime film style, soft watercolor backgrounds, warm natural light, gentle colors',
-  scifi: 'cinematic sci-fi fantasy CGI style, highly detailed costumes and armor, dramatic volumetric lighting',
-  steampunk: 'painterly 3D style with hand-painted textures, steampunk details, brass and copper, moody rim lighting',
+  smooth3d: { prompt: '3D animated feature film style, smooth stylized shading, soft global illumination, expressive faces' },
+  watercolor: { prompt: 'hand-painted 2D anime film style, soft watercolor backgrounds, warm natural light, gentle colors' },
+  scifi: { prompt: 'cinematic sci-fi fantasy CGI style, highly detailed costumes and armor, dramatic volumetric lighting' },
+  steampunk: { prompt: 'painterly 3D style with hand-painted textures, steampunk details, brass and copper, moody rim lighting' },
+  // Фотореализм: свой процесс — без LoRA, 16:9; размер и шаблон промпта — в настройках frame-refs-photo.json
+  photo: { prompt: 'photorealistic film still, natural light, real skin texture, 35mm film look', workflow: 'frame-refs-photo.json' },
 }
 
 try {
@@ -45,9 +49,9 @@ try {
         refs: refs.ref_images ?? [],
         ref_count: refs.ref_count,
         output_prefix,
-        style: STYLES[season.style] ?? '',
+        style: STYLES[season.style]?.prompt ?? '',
         setting: String(season.setting ?? '').trim(),
-        workflow_file: 'frame-refs.json', // один процесс и с персонажами, и без: лишние #ref заполнитель удаляет
+        workflow_file: STYLES[season.style]?.workflow ?? DEFAULT_WORKFLOW,
       },
     },
   ]

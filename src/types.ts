@@ -124,6 +124,7 @@ export interface Agent {
   prompt: string | null // системный промпт, markdown
   model: string | null
   provider: string | null // id из llm_providers
+  step: string | null // шаг конвейера: script | shots | frames (lib/agentSteps.ts)
   is_active: boolean | null
 }
 

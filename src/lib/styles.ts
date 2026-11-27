@@ -24,6 +24,18 @@ export interface VisualStyle {
 
 export const STYLES: VisualStyle[] = [
   {
+    id: 'photo',
+    title: 'Фотореализм',
+    like: 'как живая съёмка',
+    description: 'Кадр как из фильма: реальные люди, естественный свет. Свой процесс кадра без LoRA, горизонтальный 16:9 (frame-refs-photo.json).',
+    lora: '',
+    strength: null,
+    trigger: '',
+    promptSuffix: 'photorealistic film still, natural light, real skin texture, 35mm film look',
+    preview: '',
+    color: '#F59E0B',
+  },
+  {
     id: 'smooth3d',
     title: '3D Smooth',
     like: 'в духе Pixar',
